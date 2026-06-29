@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Fabric runtime
+.fabric/
+
+# IDE
+.vscode/
+.idea/
+.opencode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# User config (users create their own)
+~/.yt-obsidian/
+
+# Local testing
+test_*.py
+tmp/
+temp/
+
+# Archives
+*.tar.gz
+*.zip
+
+# Deprecated/backup
+_deprecated/
+_backup/

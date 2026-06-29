@@ -1,0 +1,113 @@
+# yt-obsidian Configuration
+# Phase 1C: Fabric Integration Settings
+
+# Fabric Settings
+fabric:
+  # Command to run Fabric (default: fabric-ai)
+  command: "fabric-ai"
+  
+  # Default Fabric patterns to run
+  # These patterns will be applied to each enriched packet
+  patterns:
+    - "youtube_summary"
+    # - "extract_wisdom"
+  
+  # Join pattern: used to combine chunk outputs into coherent final output
+  # Set to null/empty to skip join phase (just concatenate chunks)
+  join_pattern: "join_chunks"
+  
+  # Timeout per Fabric pattern call in seconds
+  timeout: 120
+  
+  # Enable/disable Fabric analysis by default
+  # Can be overridden with --no-fabric or --fabric-patterns flags
+  enabled: true
+
+# Retry Settings (Ollama cloud)
+rate_limits:
+  max_retries: 3
+  base_delay: 2.0
+  max_delay: 30.0
+  inter_chunk_delay: 0.0
+
+# Provider-aware model registry.
+# 'provider' selects the backend adapter. Only 'fabric' is implemented today.
+# Add entries here to switch providers or models without touching code.
+models:
+  minimax:
+    provider: fabric
+    model_id: minimax-m2.7:cloud
+    context_window: 204800
+  kimi:
+    provider: fabric
+    model_id: kimi-k2.6:cloud
+    context_window: 262144
+  deepseek:
+    provider: fabric
+    model_id: deepseek-v4-pro:cloud
+    context_window: 1048576
+  fast:
+    provider: fabric
+    model_id: minimax-m2.1:cloud
+    context_window: 204800
+
+model_aliases:
+  best: minimax
+  fast: fast
+  quality: deepseek
+
+# Chunking Settings
+chunking:
+  # Maximum tokens per chunk (comfortable for most LLM APIs)
+  max_chunk_tokens: 50000
+  overlap_tokens: 500
+  
+  # Save intermediate chunk files (.fabric/ directory)
+  save_chunks: true
+
+# Output Settings
+output:
+  # Use slugified filenames (e.g., "2025-12-08_the_chinese_ai_iceberg.md")
+  # If false, uses sanitized titles with spaces (e.g., "2025-12-08 - The Chinese AI Iceberg.md")
+  use_slug_filenames: true
+  
+  # Include AI analysis sections in markdown output
+  include_ai_analysis: true
+  
+  # Keep .fabric/ temporary directory after processing
+  # Useful for debugging or re-running patterns without re-chunking
+  keep_temp_dir: true
+
+# Metadata Extraction (Phase 1)
+metadata:
+  # Patterns for global metadata extraction
+  summary_pattern: "create_micro_summary"
+  theme_pattern: "extract_main_idea"
+  topics_pattern: "extract_patterns"
+  
+  # Timeout for metadata extraction in seconds
+  timeout: 60
+
+# Transcript Settings (Phase 1B)
+transcript:
+  # Preferred language code (e.g., "en", "es", "pt")
+  # Leave empty to use video's default language
+  preferred_language: ""
+  
+  # Include auto-generated transcripts if manual not available
+  allow_auto_generated: true
+  
+  # Include transcript in markdown output
+  include_in_markdown: true
+
+# Advanced Settings
+advanced:
+  # Video ID for .fabric/ directory naming
+  # Options: "video_id" (YouTube ID) or "slugified_title"
+  fabric_dir_naming: "video_id"
+  
+  # Maximum retries for failed Fabric pattern calls
+  max_retries: 1
+  
+  # Show detailed progress during processing
+  verbose: false

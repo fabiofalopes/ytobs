@@ -1,0 +1,96 @@
+yt - Extract YouTube videos to AI-enhanced Obsidian notes
+
+USAGE
+  yt URL                          Smart analysis (recommended)
+  yt --quick URL                  Fast mode (5 essential patterns, ~25s)
+  yt --deep URL                   Complete analysis (all patterns, ~70s)
+  yt --preview URL                Show pattern recommendations
+  yt status VIDEO                 Show status of processed video
+  yt vault                        Show vault statistics
+  yt --force URL                  Re-analyze (ignore cache)
+  yt --append --patterns X Y URL  Add new patterns to existing note
+  yt --list-processed             Show all processed videos
+
+OPTIONS
+  -h, --help                  Show full help and exit
+  --quick                     Fast analysis (5 patterns)
+  --deep                      Complete analysis (all patterns)
+  --preview                   Preview patterns without running
+  --model MODEL               Override LLM model (llama-70b, kimi, llama-4-scout)
+  --patterns PATTERN ...      Run specific patterns (expert mode)
+  --force                     Force re-analysis (ignore cache)
+  --append                    Add patterns incrementally
+  --no-analysis               Skip AI analysis (metadata only)
+  --verbose, -v               Show detailed output
+  --debug                     Show debug information
+  --list-processed            List all cached videos
+
+COMMANDS
+  status VIDEO                Show patterns run, note path, processing history
+  vault                       Show vault-wide statistics and video list
+
+EXAMPLES
+  # Smart analysis on short video (instant skip if cached)
+  yt "https://youtube.com/watch?v=jNQXAC9IVRw"
+
+  # Fast analysis on long video
+  yt --quick "https://youtu.be/dQw4w9WgXcQ"
+
+  # Complete analysis with highest quality model
+  yt --deep --model llama-70b "https://youtu.be/dQw4w9WgXcQ"
+
+  # Preview what patterns would run (no API calls)
+  yt --preview "https://youtube.com/watch?v=VIDEO_ID"
+
+  # Check status of a processed video
+  yt status jNQXAC9IVRw
+  yt status "https://youtube.com/watch?v=jNQXAC9IVRw"
+
+  # Show vault statistics
+  yt vault
+  yt vault --channels
+
+  # Add more patterns later (incremental)
+  yt "URL" --append --patterns extract_wisdom extract_ideas
+
+  # Force re-analysis (ignore cache)
+  yt "URL" --force
+
+  # See all your processed videos
+  yt --list-processed
+
+OUTPUT
+  Notes saved to: $OBSVAULT/youtube/
+  Filename format: YYYY-MM-DD_video_title.md
+  Includes: metadata, transcript, and AI analysis sections
+
+CONFIGURATION
+  Config file: ~/.yt-obsidian/config.yml
+  Created automatically on first run
+  Edit to customize default mode, model, output directory
+  Set always_run_patterns: [...] for baseline patterns
+
+MODELS
+  kimi (default)     - 10K TPM, balanced quality/speed
+  llama-4-scout      - 30K TPM, fastest throughput
+  llama-70b          - 12K TPM, highest quality
+
+CACHE BEHAVIOR
+  First run:         Process and cache analysis
+  Second run:        Skip (instant, 0 API calls)
+  With --force:      Ignore cache and re-run
+  With --append:     Add new patterns without re-running all
+
+TIPS
+  - Use --preview to see recommendations before committing API quota
+  - Use --quick for fast turn-around on long videos
+  - Run twice to verify cache is working (should skip on 2nd run)
+  - Use yt status VIDEO to see what patterns have been run
+  - Add OBSVAULT to ~/.zshrc: export OBSVAULT=/path/to/vault
+
+DOCUMENTATION
+  Full guide:        ./README.md
+  Architecture:      ./docs/ARCHITECTURE.md
+  Development:       ./CONTEXT.md
+
+For more help: yt --help or see README.md

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ytobs"
+version = "4.0.0"
+description = "Extract YouTube videos to Obsidian notes with AI analysis"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Fábio Lopes"}
+]
+keywords = ["youtube", "obsidian", "ai", "transcription", "knowledge-management"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "yt-dlp>=2023.0.0",
+    "pyyaml>=6.0",
+    "tiktoken>=0.5.0",
+    "requests>=2.28.0",
+    "tenacity>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+    "pytest-cov>=7.0",
+    "mypy>=1.19",
+    "coverage>=7.13",
+]
+
+[project.scripts]
+ytobs = "ytobs.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ytobs*"]
