@@ -4,10 +4,11 @@ Configuration management for yt (YouTube to Obsidian).
 Handles loading, creating, and managing user configuration from ~/.yt-obsidian/config.yml
 """
 
+import copy
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 
@@ -22,6 +23,30 @@ class ModelConfig:
     api_key_env: Optional[str] = None
 
 
+# Default settings for the transcript refinement (txrefine) layer.
+# Used as-is when the user's config.yml lacks a `refinement:` block.
+DEFAULT_REFINEMENT_CONFIG: Dict[str, Any] = {
+    "enabled": True,
+    "backend": "auto",  # auto | fabric | opencode | regex-only
+    "skip_short": 100,
+    "max_input_tokens": 10000,
+    "validation": {
+        "min_length_ratio": 0.70,
+        "max_length_ratio": 1.15,
+        "min_bigram_overlap": 0.85,
+        "on_fail": "fallback",
+    },
+    "fabric": {
+        "analyzer_pattern": "transcript-analyzer",
+        "refiner_pattern": "transcript-refiner",
+        "model": None,  # None = default model chain (best -> fast -> quality -> compound)
+        "command": "fabric",
+        "timeout": 120,
+    },
+    "store_original": True,
+}
+
+
 @dataclass
 class Config:
     """User configuration for yt command."""
@@ -33,18 +58,21 @@ class Config:
     # Provider-aware model registry
     models: Dict[str, ModelConfig] = field(
         default_factory=lambda: {
-            "minimax": ModelConfig("fabric", "minimax-m2.7:cloud", 204800),
-            "kimi": ModelConfig("fabric", "kimi-k2.6:cloud", 262144),
-            "deepseek": ModelConfig("fabric", "deepseek-v4-pro:cloud", 1048576),
-            "fast": ModelConfig("fabric", "minimax-m2.1:cloud", 204800),
-            "qwen": ModelConfig("fabric", "qwen3.5:cloud", 262144),
+            "best": ModelConfig("fabric", "qwen/qwen3.8-27b", 131042),
+            "fast": ModelConfig("fabric", "openai/gpt-oss-20b", 131072),
+            "quality": ModelConfig("fabric", "openai/gpt-oss-120b", 131072),
+            "compound": ModelConfig("fabric", "groq/compound-mini", 131072),
+            "pt": ModelConfig("fabric", "amalia-9b", 32768),
+            "ornith": ModelConfig("fabric", "ornith-9b", 32768),
+            "omnicoder": ModelConfig("fabric", "omnicoder-9b", 32768),
         }
     )
     model_aliases: Dict[str, str] = field(
         default_factory=lambda: {
-            "best": "minimax",
+            "best": "best",
             "fast": "fast",
-            "quality": "deepseek",
+            "quality": "quality",
+            "pt": "pt",
         }
     )
 
@@ -56,6 +84,11 @@ class Config:
 
     # Always-run patterns (run on every video first)
     always_run_patterns: list = field(default_factory=list)
+
+    # Curated mode settings (the recommended default: 2 high-signal patterns)
+    curated_patterns: List[str] = field(
+        default_factory=lambda: ["extract_wisdom", "summarize"]
+    )
 
     # Auto-analyze settings (used when analysis_mode=auto)
     auto_min_priority: str = "high"  # essential, high, medium, optional
@@ -78,9 +111,14 @@ class Config:
     deep_max_patterns: int = 25
 
     # Expert mode settings
-    fabric_command: str = "fabric-ai"
+    fabric_command: str = "fabric"
     timeout_per_pattern: int = 120
     chunk_size: int = 50000
+
+    # Transcript refinement (txrefine layer) settings
+    refinement: Dict[str, Any] = field(
+        default_factory=lambda: copy.deepcopy(DEFAULT_REFINEMENT_CONFIG)
+    )
 
 
 DEFAULT_CONFIG_CONTENT = """# yt - YouTube to Obsidian Configuration
@@ -91,9 +129,12 @@ DEFAULT_CONFIG_CONTENT = """# yt - YouTube to Obsidian Configuration
 # ANALYSIS MODE
 # ============================================================================
 # Determines how videos are analyzed by default
-# Options: auto, quick, deep, expert
+# Options: curated, auto, quick, deep, expert
 #
-# - auto:   Smart analysis using pattern_optimizer (recommended)
+# - curated: Two high-signal patterns only (extract_wisdom + summarize)
+#            Fast and cheap — the recommended default. Time: ~15 seconds
+#
+# - auto:   Smart analysis using pattern_optimizer
 #           Analyzes content and selects 10-15 optimal patterns
 #           Time: ~50 seconds
 #
@@ -106,7 +147,7 @@ DEFAULT_CONFIG_CONTENT = """# yt - YouTube to Obsidian Configuration
 #
 # - expert: Full manual control over all settings
 #
-analysis_mode: auto
+analysis_mode: curated
 
 # ============================================================================
 # MODEL SELECTION
@@ -115,42 +156,57 @@ analysis_mode: auto
 # a specific model_id registered in models (or a raw Fabric model tag).
 # Options: best, fast, quality, or any model alias defined below
 #
-# - best:    Auto-selects best all-around model (minimax-m2.7, 200K context)
-# - fast:    Prioritizes speed (minimax-m2.1, 200K context)
-# - quality: Prioritizes quality (deepseek-v4-pro, 1M context)
+# - best:    Auto-selects best all-around model (qwen/qwen3.8-27b via Groq)
+# - fast:    Prioritizes speed (openai/gpt-oss-20b via Groq)
+# - quality: Prioritizes quality (openai/gpt-oss-120b via Groq)
+# - pt:      European Portuguese content (amalia-9b via Lusófona, free)
 #
+# All models below are FREE and validated against `fabric -L` (2026-09-01).
+# Do NOT use bare Ollama IDs (minimax-m2.7, kimi-k2.6, deepseek-v4-pro) —
+# they route to ollama.com and return 402 Payment Required.
 model: best
 
 # Provider-aware model registry.
 # Add, remove, or edit entries to switch providers without touching code.
 # 'provider' selects the backend adapter. Only 'fabric' is implemented today.
+# Groq-prefixed IDs use the free-tier Groq key; unprefixed IDs use the
+# free LiteLLM endpoint (modelos.ai.ulusofona.pt).
 models:
-  minimax:
+  best:
     provider: fabric
-    model_id: minimax-m2.7:cloud
-    context_window: 204800
-  kimi:
-    provider: fabric
-    model_id: kimi-k2.6:cloud
-    context_window: 262144
-  deepseek:
-    provider: fabric
-    model_id: deepseek-v4-pro:cloud
-    context_window: 1048576
+    model_id: qwen/qwen3.8-27b
+    context_window: 131042
   fast:
     provider: fabric
-    model_id: minimax-m2.1:cloud
-    context_window: 204800
-  qwen:
+    model_id: openai/gpt-oss-20b
+    context_window: 131072
+  quality:
     provider: fabric
-    model_id: qwen3.5:cloud
-    context_window: 262144
+    model_id: openai/gpt-oss-120b
+    context_window: 131072
+  compound:
+    provider: fabric
+    model_id: groq/compound-mini
+    context_window: 131072
+  pt:
+    provider: fabric
+    model_id: amalia-9b
+    context_window: 32768
+  ornith:
+    provider: fabric
+    model_id: ornith-9b
+    context_window: 32768
+  omnicoder:
+    provider: fabric
+    model_id: omnicoder-9b
+    context_window: 32768
 
 # Short aliases that map to entries in 'models'.
 model_aliases:
-  best: minimax
+  best: best
   fast: fast
-  quality: deepseek
+  quality: quality
+  pt: pt
 
 # ============================================================================
 # OUTPUT SETTINGS
@@ -192,6 +248,15 @@ auto:
   show_recommendations: false
 
 # ============================================================================
+# CURATED MODE SETTINGS (default analysis mode)
+# ============================================================================
+# The curated pattern set — high signal, low cost (2 patterns)
+curated:
+  patterns:
+    - extract_wisdom
+    - summarize
+
+# ============================================================================
 # QUICK MODE SETTINGS
 # ============================================================================
 # Patterns to run in quick mode (can customize this list)
@@ -218,13 +283,52 @@ deep:
 # ============================================================================
 expert:
   # Fabric CLI command (override if using different installation)
-  fabric_command: fabric-ai
-  
+  fabric_command: fabric
+
   # Timeout per pattern execution (seconds)
   timeout_per_pattern: 120
-  
+
   # Chunk size for large transcripts (tokens)
   chunk_size: 50000
+
+# ============================================================================
+# TRANSCRIPT REFINEMENT (txrefine layer)
+# ============================================================================
+# Cleans raw auto-transcripts (bracket noise, broken sentences, duplicates)
+# before pattern analysis. The regex pre-pass always runs; LLM refinement
+# output is validated (length ratio + bigram overlap) and falls back to
+# regex-only on failure. Never blocks note creation.
+refinement:
+  # Master switch (false = regex pre-pass only)
+  enabled: true
+
+  # auto | fabric | opencode | regex-only
+  # "auto" = fabric if the fabric binary is on PATH, else regex-only
+  backend: "auto"
+
+  # Don't run LLM refinement on transcripts shorter than N words
+  skip_short: 100
+
+  # Refine in ~8K-token chunks when input exceeds this many tokens
+  max_input_tokens: 10000
+
+  # Validation guards (always on when an LLM backend is used)
+  validation:
+    min_length_ratio: 0.70      # Reject if output < 70% of input length
+    max_length_ratio: 1.15      # Reject if output > 115% of input length
+    min_bigram_overlap: 0.85    # Reject if < 85% of input bigrams preserved
+    on_fail: "fallback"         # fallback = use regex-only result
+
+  # Fabric backend settings (2-stage: analyze, then refine)
+  fabric:
+    analyzer_pattern: "transcript-analyzer"
+    refiner_pattern: "transcript-refiner"
+    # model: null              # null = default chain best -> fast -> quality -> compound
+    # command: "fabric"
+    # timeout: 120
+
+  # Keep pre-refinement transcript hash in cache (store_original)
+  store_original: true
 """
 
 
@@ -315,6 +419,10 @@ def load_config() -> Config:
         if "quick" in user_config and "patterns" in user_config["quick"]:
             config.quick_patterns = user_config["quick"]["patterns"]
 
+        # Curated mode settings
+        if "curated" in user_config and "patterns" in user_config["curated"]:
+            config.curated_patterns = user_config["curated"]["patterns"]
+
         # Deep mode settings
         if "deep" in user_config:
             deep = user_config["deep"]
@@ -333,6 +441,18 @@ def load_config() -> Config:
                 "timeout_per_pattern", config.timeout_per_pattern
             )
             config.chunk_size = expert.get("chunk_size", config.chunk_size)
+
+        # Transcript refinement (txrefine) settings — deep-merge over
+        # defaults so configs lacking the block load unchanged
+        if "refinement" in user_config:
+            user_refinement = user_config["refinement"] or {}
+            merged = copy.deepcopy(config.refinement)
+            for key, value in user_refinement.items():
+                if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                    merged[key].update(value)
+                else:
+                    merged[key] = value
+            config.refinement = merged
 
         # Provider-aware model registry
         if "models" in user_config:
