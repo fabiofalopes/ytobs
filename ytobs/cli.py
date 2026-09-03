@@ -191,6 +191,32 @@ def create_parser() -> argparse.ArgumentParser:
         help="Max notes to scan (default: all)",
     )
 
+    # Patterns command: ytobs patterns (Sprint 2 — pattern discovery)
+    patterns_parser = subparsers.add_parser(
+        "patterns", help="Discover available fabric patterns"
+    )
+    patterns_parser.add_argument(
+        "action",
+        nargs="?",
+        default="list",
+        choices=["list", "search", "describe", "suggest"],
+        help="Discovery action (default: list)",
+    )
+    patterns_parser.add_argument(
+        "query",
+        nargs="?",
+        default=None,
+        metavar="ARG",
+        help="Search query (search) / pattern name (describe) / content type (suggest)",
+    )
+    patterns_parser.add_argument(
+        "--content-type",
+        dest="content_type",
+        default=None,
+        metavar="TYPE",
+        help="Content type for suggest (video, podcast, tutorial, talk, interview, news)",
+    )
+
     # Mode shortcuts
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
@@ -709,6 +735,13 @@ def handle_dedupe_command(args, config: Config) -> int:
     return run_dedupe(args, config)
 
 
+def handle_patterns_command(args, config: Config) -> int:
+    """Handle 'ytobs patterns' command (fabric pattern discovery)."""
+    from ytobs.pattern_discovery import run_patterns
+
+    return run_patterns(args, config)
+
+
 def main() -> int:
     """Main entry point for ytobs command."""
     # Extract URL manually before argparse to avoid subparser conflicts
@@ -717,7 +750,7 @@ def main() -> int:
     url_idx = -1
 
     for i, arg in enumerate(sys.argv[1:], start=1):
-        if arg in ["status", "vault", "channel", "retro", "dedupe"]:
+        if arg in ["status", "vault", "channel", "retro", "dedupe", "patterns"]:
             # This is a subcommand, don't extract URL
             break
         elif arg.startswith("-"):
@@ -738,7 +771,14 @@ def main() -> int:
 
     # Restore URL to args (only for non-subcommand video URLs)
     # Subcommands like 'status', 'vault', 'channel' handle their own URL arguments
-    if args.command not in ("status", "vault", "channel", "retro", "dedupe"):
+    if args.command not in (
+        "status",
+        "vault",
+        "channel",
+        "retro",
+        "dedupe",
+        "patterns",
+    ):
         args.url = url
 
     try:
@@ -770,6 +810,9 @@ def main() -> int:
 
         if args.command == "dedupe":
             return handle_dedupe_command(args, config)
+
+        if args.command == "patterns":
+            return handle_patterns_command(args, config)
 
         # Determine mode based on flags
         if args.quick:
