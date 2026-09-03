@@ -59,7 +59,7 @@ class MetadataExtractor:
 
     def __init__(
         self,
-        fabric_command: str = "fabric-ai",
+        fabric_command: str = "fabric",
         timeout: int = 60,
         patterns: Optional[Dict[str, str]] = None,
         model_config: Optional[ModelConfig] = None,
@@ -68,7 +68,7 @@ class MetadataExtractor:
         """Initialize metadata extractor.
 
         Args:
-            fabric_command: Command to run Fabric (default: "fabric-ai")
+            fabric_command: Command to run Fabric (default: "fabric")
             timeout: Timeout in seconds per pattern (default: 60)
             patterns: Custom pattern mapping (default: use DEFAULT_PATTERNS)
             model_config: ModelConfig for the primary model
@@ -83,7 +83,7 @@ class MetadataExtractor:
         )
 
         primary = ModelHandle.from_config(self.model_config, fabric_command)
-        fallback_aliases = ["fast", "kimi", "deepseek"]
+        fallback_aliases = ["fast", "quality", "compound"]
         fallbacks = [
             ModelHandle.from_config(
                 resolve_model_config(alias, self.config), fabric_command

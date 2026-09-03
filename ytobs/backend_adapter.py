@@ -41,7 +41,7 @@ class BackendAdapter(Protocol):
 class FabricAdapter:
     """Adapter for the Fabric CLI backend."""
 
-    def __init__(self, fabric_command: str = "fabric-ai"):
+    def __init__(self, fabric_command: str = "fabric"):
         self.fabric_command = fabric_command
 
     def run_pattern(
@@ -56,7 +56,7 @@ class FabricAdapter:
         Args:
             pattern: Fabric pattern name.
             input_text: Input text (enriched packet).
-            model_id: Fabric model tag (e.g., "minimax-m2.7:cloud").
+            model_id: Fabric model tag (e.g., "minimax-m2.7").
             timeout: Timeout in seconds.
 
         Returns:
@@ -106,7 +106,7 @@ ADAPTER_REGISTRY: Dict[str, type] = {
 }
 
 
-def get_adapter(provider: str, fabric_command: str = "fabric-ai") -> BackendAdapter:
+def get_adapter(provider: str, fabric_command: str = "fabric") -> BackendAdapter:
     """Get a backend adapter instance for the given provider.
 
     Args:

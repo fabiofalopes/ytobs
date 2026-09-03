@@ -172,7 +172,7 @@ class EnrichedPacket:
         2. Content separator
         3. Actual transcript segment
         
-        This string is meant to be passed to fabric-ai via stdin after
+        This string is meant to be passed to fabric via stdin after
         the pattern's system prompt.
         
         Returns:

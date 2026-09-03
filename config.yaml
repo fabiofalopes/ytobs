@@ -3,8 +3,9 @@
 
 # Fabric Settings
 fabric:
-  # Command to run Fabric (default: fabric-ai)
-  command: "fabric-ai"
+  # Both `fabric` and `fabric-ai` resolve to the same local build
+  # (v1.4.473 + system-only message patch, see HELP.md "Model compatibility")
+  command: "fabric"
   
   # Default Fabric patterns to run
   # These patterns will be applied to each enriched packet
@@ -32,29 +33,47 @@ rate_limits:
 
 # Provider-aware model registry.
 # 'provider' selects the backend adapter. Only 'fabric' is implemented today.
-# Add entries here to switch providers or models without touching code.
+# ALL models below are FREE and validated against `fabric -L` (2026-09-01):
+#   - Groq vendors = free-tier API key (openai/gpt-oss-*, qwen, compound)
+#   - no vendor prefix = LiteLLM (Lusófona modelos.ai.ulusofona.pt, free)
+# DO NOT use bare Ollama IDs (minimax-m2.7, kimi-k2.6, deepseek-v4-pro) —
+# they route to ollama.com and return 402 Payment Required.
+# Note: `bonsai-27b-1bit` (Lusófona) is listed but currently 500s server-side.
 models:
-  minimax:
+  best:
     provider: fabric
-    model_id: minimax-m2.7:cloud
-    context_window: 204800
-  kimi:
-    provider: fabric
-    model_id: kimi-k2.6:cloud
-    context_window: 262144
-  deepseek:
-    provider: fabric
-    model_id: deepseek-v4-pro:cloud
-    context_window: 1048576
+    model_id: qwen/qwen3.8-27b
+    context_window: 131042
   fast:
     provider: fabric
-    model_id: minimax-m2.1:cloud
-    context_window: 204800
+    model_id: openai/gpt-oss-20b
+    context_window: 131072
+  quality:
+    provider: fabric
+    model_id: openai/gpt-oss-120b
+    context_window: 131072
+  compound:
+    provider: fabric
+    model_id: groq/compound-mini
+    context_window: 131072
+  pt:
+    provider: fabric
+    model_id: amalia-9b
+    context_window: 32768
+  ornith:
+    provider: fabric
+    model_id: ornith-9b
+    context_window: 32768
+  omnicoder:
+    provider: fabric
+    model_id: omnicoder-9b
+    context_window: 32768
 
 model_aliases:
-  best: minimax
+  best: best
   fast: fast
-  quality: deepseek
+  quality: quality
+  pt: pt
 
 # Chunking Settings
 chunking:

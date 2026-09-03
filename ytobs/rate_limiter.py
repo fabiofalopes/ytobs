@@ -25,7 +25,7 @@ class ModelHandle:
 
     @classmethod
     def from_config(
-        cls, config: ModelConfig, fabric_command: str = "fabric-ai"
+        cls, config: ModelConfig, fabric_command: str = "fabric"
     ) -> "ModelHandle":
         """Build a ModelHandle from a ModelConfig entry."""
         from .backend_adapter import get_adapter
