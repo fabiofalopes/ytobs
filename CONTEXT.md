@@ -2,7 +2,8 @@
 
 **Last Updated**: 2026-09-03 (V4.1.0 Curation Layer)  
 **Status**: ✅ V4.1.0 - CURATION LAYER OPERATIONAL (RETRO, DEDUPE, REFINEMENT, PROVENANCE)  
-**Location**: `~/projetos/hub/ytobs/`
+**Location**: `~/projetos/hub/ytobs/`  
+**GitHub**: https://github.com/fabiofalopes/ytobs (public, synced 2026-09-03)
 
 ---
 
@@ -870,5 +871,22 @@ ytobs --force URL              # Re-analyze
 6. Minimal default pattern footprint (curated mode)
 
 **Status**: ✅ V4.1.0 COMPLETE — verified 2026-09-03: dedupe applied to vault (8 groups, 31 notes marked, 0 deleted), retro batch 4/4 succeeded on qwen3.8-27b, --force now overwrites in place, fresh-video E2E with live fabric refinement (2550→2637 chars) all green. Bigram validation fixed (punctuation-aware tokens). Live config `analysis_mode` flipped `auto` → `curated` per locked decision #5. 66 retro targets remain for future quota-aware batches (`ytobs retro --limit 5`).
+
+---
+
+### 2026-09-03 (later): Repo Sealed + Sprint 2 Pattern Discovery
+
+**Major Achievement**: ytobs published to GitHub (10-commit V4.1.0 history), docs refreshed to V4.1 reality, Sprint 2 pattern discovery implemented and shipped.
+
+**Repo/GitOps**:
+- Created https://github.com/fabiofalopes/ytobs (public); V4.1.0 sealed as 10 atomic commits + version bump 4.0.0 → 4.1.0
+- Doc refresh: README/START_HERE/CONTEXT headers de-V3.0'd; dead `./yt`/`lib/` refs removed; honest Done/Next roadmap
+
+**Sprint 2 — `ytobs patterns` family** (`pattern_discovery.py`, wired in cli.py):
+- `ytobs patterns` — list (fabric -l primary, filesystem fallback), `search QUERY`, `describe NAME` (frontmatter description → first paragraph, never raises), `suggest --content-type TYPE` (static table ∩ installed patterns; types: video/podcast/tutorial/talk/interview/news)
+- No AI calls, stdlib-only; argv pre-parse fix (patterns was being stolen as URL)
+- Verified: 299 patterns listed, 51 'extract' matches, describe/suggest + error paths (exit 1) green; status/--version regression-free
+
+**Retro progress**: batch of 5 (cheapest-first) 5/5 green on qwen3.8-27b → **65 targets remain**. New finding: 37 targets have NO transcript in cache — need re-fetch (`--update` backlog) before retro can process them.
 
 
