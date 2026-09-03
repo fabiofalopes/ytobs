@@ -38,10 +38,14 @@ Output: `2009-10-25_rick_astley_never_gonna_give_you_up.md` in your Obsidian vau
 ✅ **Error handling** - Clear messages for unavailable/deleted videos  
 ✅ **Customizable** - Output location via environment variable  
 
+✅ **Transcripts & AI analysis** - Fabric-powered pattern sections with model provenance  
+✅ **Curation layer (V4.1)** - retro enrichment, dedupe, transcript refinement  
+✅ **Free models** - validated free registry, qwen3.8-27b default  
+
 🔜 **Coming Later**  
-- Phase 2: Transcript extraction
-- Phase 3: Audio download
-- Phase 4: Batch processing
+- Pattern discovery (`ytobs patterns`)
+- Audio download
+- Batch processing (playlists, channels)
 
 ---
 
@@ -287,7 +291,7 @@ SORT created DESC
 
 ## For Developers
 
-This is Phase 1 of the YouTube to Obsidian project. See technical documentation for implementation details:
+This is V4.1.0 of the YouTube to Obsidian project. See technical documentation for implementation details:
 
 - **[CONTEXT.md](./CONTEXT.md)** - Project context and session history
 - **[Architecture](./docs/ARCHITECTURE.md)** - System design
@@ -299,7 +303,7 @@ This is Phase 1 of the YouTube to Obsidian project. See technical documentation 
 
 ## Contributing
 
-This is a personal project in Phase 1 development. Not accepting contributions at this time, but feedback is welcome!
+This is a personal project in active development. Not accepting contributions at this time, but feedback is welcome!
 
 ---
 
@@ -322,14 +326,16 @@ If you find issues:
 
 ## Roadmap
 
-### Phase 2: Transcripts
-Extract and embed video transcripts in your notes.
+### ✅ Done
+- Transcripts + Fabric AI analysis
+- Smart cache + incremental updates (V3.0)
+- Curation layer: retro, dedupe, refinement, provenance (V4.1)
 
-### Phase 3: Audio
-Download audio as Opus files linked to your notes.
-
-### Phase 4: Batch Operations
-Process multiple URLs, playlists, and channels at once.
+### Next
+- Pattern discovery (`ytobs patterns` family)
+- Vault-wide bulk operations
+- Audio download as Opus files linked to notes
+- Batch operations: multiple URLs, playlists, channels
 
 ---
 

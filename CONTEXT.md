@@ -1,7 +1,7 @@
 # YouTube to Obsidian Pipeline - Project Context
 
-**Last Updated**: 2025-12-11 (V3.0 Migration Complete)  
-**Status**: ✅ V3.0 - SMART CACHE SYSTEM OPERATIONAL  
+**Last Updated**: 2026-09-03 (V4.1.0 Curation Layer)  
+**Status**: ✅ V4.1.0 - CURATION LAYER OPERATIONAL (RETRO, DEDUPE, REFINEMENT, PROVENANCE)  
 **Location**: `~/projetos/hub/ytobs/`
 
 ---
@@ -10,7 +10,7 @@
 
 **Name**: YouTube to Obsidian (`ytobs`)  
 **Purpose**: Extract YouTube videos to AI-enhanced Obsidian notes with ONE command  
-**Current State**: V4.0 - pip-installable package at `~/projetos/hub/ytobs/`
+**Current State**: V4.1.0 - pip-installable package at `~/projetos/hub/ytobs/`
 
 ---
 

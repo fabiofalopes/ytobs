@@ -1,6 +1,6 @@
 # YouTube-Obsidian - Quick Start for AI Agents
 
-**Version:** V3.0 - Smart Cache System  
+**Version:** V4.1.0 - Curation Layer (Retro, Dedupe, Refinement, Provenance)  
 **Status:** ✅ Fully Operational  
 **Location:** `~/projetos/hub/ytobs/`  
 **Command:** `ytobs "YOUTUBE_URL"`
@@ -22,7 +22,7 @@ ytobs "https://youtube.com/watch?v=VIDEO_ID"
 
 ```bash
 # Test with short video (19 seconds)
-./yt --quick "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+ytobs --quick "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
 # Run again - should SKIP instantly (cache working)
 ytobs "https://www.youtube.com/watch?v=jNQXAC9IVRw"
@@ -45,15 +45,18 @@ ytobs "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
 ---
 
-## 🚀 Current State (V3.0)
+## 🚀 Current State (V4.1.0)
 
 **Implemented & Working:**
 - ✅ Smart cache prevents duplicate processing
 - ✅ Incremental pattern addition (`--append`)
-- ✅ Multi-model fallback (llama-70b, kimi, llama-8b)
+- ✅ Curated default mode (`extract_wisdom` + `summarize`)
+- ✅ Free model registry (best=qwen/qwen3.8-27b, fast=gpt-oss-20b, quality=gpt-oss-120b, compound=groq/compound-mini)
+- ✅ Model provenance per pattern section + `pattern_runs` frontmatter
+- ✅ Fenced transcripts + refinement layer (regex for retro / 2-stage LLM for new runs)
+- ✅ `ytobs retro` — in-place enrichment of pattern-less notes
+- ✅ `ytobs dedupe` — duplicate marking (never deletes)
 - ✅ Rate limit handling with retry logic
-- ✅ Intelligent pattern selection via `pattern_optimizer`
-- ✅ Phase 1 (global metadata) + Phase 2 (pattern analysis)
 
 **Key Commands:**
 ```bash
@@ -80,7 +83,10 @@ ytobs --list-processed                   # Show all cached videos
 | V1.5 | 2025-12-08 | Fabric AI integration (2-phase orchestration) |
 | V2.0 | 2025-12-09 | Simplified interface (unified `yt` command) |
 | V2.1 | 2025-12-09 | Rate limiting + multi-model fallback |
-| **V3.0** | **2025-12-09** | **Smart cache + incremental updates** |
+| V3.0 | 2025-12-09 | Smart cache + incremental updates |
+| V4.0 | 2025-12-17 | VideoContext packet enrichment, status/vault commands |
+| V4.0 pkg | 2026 | Extracted to hub/ytobs as pip-installable package |
+| **V4.1.0** | **2026-09-03** | **Curation layer: retro, dedupe, refinement, provenance** |
 
 ---
 
@@ -94,7 +100,7 @@ ytobs --list-processed                   # Show all cached videos
 
 ### Adding Features
 1. Check docs/architecture/future-multi-provider.md for roadmap
-2. Review V3.0 implementation in CONTEXT.md as example
+2. Review the V4.1.0 session entry in CONTEXT.md as example
 3. Create new docs/architecture/v3.X-feature-name.md if major
 4. Update CONTEXT.md session log when complete
 
@@ -117,9 +123,8 @@ ytobs "URL" --force  # Should re-run
 ## 📊 Project Statistics
 
 **Code:**
-- 15 Python modules in `lib/`
-- ~3,000 lines of production code
-- V3.0 added: `cache_manager.py`, `incremental_writer.py`
+- ~20 Python modules in the `ytobs/` package (pip-installable)
+- Curation layer (V4.1): `retro.py`, `dedupe.py`, `frontmatter_editor.py`, `transcript_refiner.py`
 
 **Performance:**
 - First run: 50 API calls, ~50s
@@ -152,23 +157,22 @@ ytobs "URL" --force  # Should re-run
 ## 🚨 Critical Files (Never Delete)
 
 - `CONTEXT.md` - Project memory
-- `ytobs` - Main CLI interface
-- `lib/cache_manager.py` - V3.0 core functionality
-- `lib/fabric_orchestrator.py` - AI analysis engine
+- `ytobs/cli.py` - Main CLI interface
+- `ytobs/cache_manager.py` - Cache core
+- `ytobs/fabric_orchestrator.py` - AI analysis engine
+- `ytobs/frontmatter_editor.py` - Safe note editing core (V4.1)
 - `config.yaml` - Default configuration template
 
 ---
 
-## 🔜 Next Steps (V3.1+)
+## 🔜 Next Steps (V4.1+)
 
-Ready for implementation:
-1. Implement `--update` flag (metadata refresh)
-2. Bulk playlist processing
-3. Migration tool for existing notes
-4. Vector DB integration
-5. Knowledge graph construction
+1. Finish retro enrichment — 66 targets remain (`ytobs retro --limit 5`, quota-aware batches)
+2. Pattern discovery (`ytobs patterns` family) — Sprint 2 of PACKET_ENRICHMENT_SPEC
+3. Vault-wide bulk operations (`vault apply`)
+4. Backlog: `--update` metadata refresh, playlist processing, vector DB
 
-See: docs/architecture/future-multi-provider.md
+See: docs/development/PACKET_ENRICHMENT_SPEC.md and docs/RUNBOOK.md
 
 ---
 
