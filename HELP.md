@@ -172,31 +172,63 @@ yt --patterns extract_wisdom create_summary extract_ideas "YOUTUBE_URL"
 Override the default LLM model for analysis.
 
 ```bash
-# Use fastest model (30K TPM)
-yt --model llama-4-scout "YOUTUBE_URL"
+# Default (best) — qwen/qwen3.8-27b via Groq, free tier
+ytobs "YOUTUBE_URL"
 
-# Use highest quality model (12K TPM)
-yt --model llama-70b "YOUTUBE_URL"
+# Specific registered model by alias
+ytobs --model fast "YOUTUBE_URL"      # openai/gpt-oss-20b
+ytobs --model quality "YOUTUBE_URL"   # openai/gpt-oss-120b
+ytobs --model pt "YOUTUBE_URL"        # amalia-9b (Lusófona, PT-PT)
 
-# Use default (10K TPM)
-yt --model kimi "YOUTUBE_URL"
-
-# Use in deep mode
-yt --deep --model llama-70b "YOUTUBE_URL"
+# Full analysis with a specific model
+ytobs --deep --model quality "YOUTUBE_URL"
 ```
 
-**Available Models:**
+**Available Models** (free, validated 2026-09-01):
 
-| Model | TPM | Speed | Quality | Best For |
-|-------|-----|-------|---------|----------|
-| `llama-4-scout` | 30K | ⚡⚡⚡ | Good | Long videos, quick turnaround |
-| `llama-70b` | 12K | ⚡ | Excellent | High-quality analysis |
-| `kimi` | 10K | ⚡⚡ | Very Good | Default, balanced |
-| `llama-8b` | 6K | ⚡⚡⚡ | Good | Fast for short videos |
+| Alias | model_id | Source | Context | Best For |
+|-------|----------|--------|---------|----------|
+| `best` | `qwen/qwen3.8-27b` | Groq free tier | 131,042 | Default, balanced |
+| `fast` | `openai/gpt-oss-20b` | Groq free tier | 131,072 | Quick turnaround |
+| `quality` | `openai/gpt-oss-120b` | Groq free tier | 131,072 | Highest quality |
+| `compound` | `groq/compound-mini` | Groq free tier | 131,072 | Agentic/web search |
+| `pt` | `amalia-9b` | Lusófona (free) | ~32K | PT-PT content |
+
+**Fallback chain** (automatic on errors): `best → fast → quality → compound`.
+
+**Do NOT use bare Ollama IDs** (`minimax-m2.7`, `kimi-k2.6`, `deepseek-v4-pro`): they route to ollama.com and return `402 Payment Required`.
+
+### Model compatibility: fabric + template-strict models
+
+**Symptom**: pattern runs fail with `400 Bad Request`:
+- `"minijinja: raise_exception: No user query found in messages."` (Qwen models)
+- `"last message role must be 'user'"` (Groq compound models)
+
+**Root cause**: fabric sends the pattern text as a `system` message. When a pattern
+embeds `{{input}}` in its `system.md`, fabric marks the input as "used" and never
+appends a `user` message — producing a system-only payload. Models with strict chat
+templates (Qwen, Groq compound) reject that; lenient models (gpt-oss, amalia-9b) accept it.
+Tracked upstream as [fabric issue #2108](https://github.com/danielmiessler/fabric/issues/2108);
+unfixed as of v1.4.473.
+
+**Solution applied on this machine**: fabric is a local build
+(`v1.4.473+dirty`, `~/.local/bin/fabric`, with `fabric-ai` symlinked to it) carrying a
+two-line patch that promotes a lone `system` message to `user` role in
+`internal/plugins/ai/openai/{chat_completions,openai}.go` (generalizing fabric's own
+deepseek-only workaround). To rebuild after a fabric upgrade:
+
+```bash
+git clone --depth 1 --branch <new-tag> https://github.com/danielmiessler/fabric "$TMPDIR/fabric-src"
+# apply the same patch: drop `strings.Contains(opts.Model, "deepseek") &&` from the
+# system->user promotion condition in both files (remove the now-unused "strings" import
+# in chat_completions.go), then:
+cd "$TMPDIR/fabric-src" && GOBIN=~/.local/bin go install ./cmd/fabric
+```
 
 **Configuration:**
-- Edit `~/.yt-obsidian/config.yml`:
-  - `model: kimi` - Default model for all modes
+- Registry + aliases live in `~/.yt-obsidian/config.yml` (`models:` / `model_aliases:`)
+- Repo reference copy: `config.yaml`
+- Per-run override: `--model <alias>`
 
 ---
 

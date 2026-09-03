@@ -808,4 +808,67 @@ ytobs --append --patterns X Y  # Add patterns incrementally
 ytobs --force URL              # Re-analyze
 ```
 
+---
+
+### 2026-09-01: Free Model Migration + fabric Patch
+
+**Major Achievement**: All-paid-model config replaced with validated free models; fabric patched for template-strict models; qwen3.8-27b default restored
+
+**Model Registry Overhaul**:
+- Old registry was 100% broken: `minimax-m2.1`/`deepseek-v4-pro` (stale IDs → "could not find vendor"), `minimax-m2.7`/`kimi-k2.6` (402 Payment Required on ollama.com)
+- New free registry (all live-tested): best=qwen/qwen3.8-27b (131,042 ctx), fast=openai/gpt-oss-20b, quality=openai/gpt-oss-120b, compound=groq/compound-mini, pt=amalia-9b (Lusófona), + ornith-9b/omnicoder-9b
+- Updated: `config.yaml`, `~/.yt-obsidian/config.yml` (the one actually loaded), `ytobs/config.py` (defaults + embedded template)
+- Fixed hardcoded fallback lists (`["kimi", "fast"]` in fabric_orchestrator.py, `["fast", "kimi", "deepseek"]` in metadata_extractor.py) → `["fast", "quality", "compound"]`
+
+**fabric Binary (upstream bug + local patch)**:
+- Root cause of Groq 400s ("No user query found in messages" / "last message role must be 'user'"): patterns embedding `{{input}}` in system.md suppress the user message → system-only payload; strict-template models (Qwen, compound) reject it. Upstream issue #2108, UNFIXED as of v1.4.473
+- Local build `v1.4.473+dirty` at `~/.local/bin/fabric` (fabric-ai symlinked): patched `internal/plugins/ai/openai/{chat_completions,openai}.go` to promote a lone system message to user role (generalizes upstream's deepseek-only hack)
+- Rebuild instructions documented in HELP.md → "Model compatibility: fabric + template-strict models"
+
+**pattern_optimizer Fix** (`ytobs/cli.py`):
+- Was running on fabric's default model (amalia-9b), which deterministically omits a JSON comma → parse failure
+- Now pinned to the ytobs-configured model (`-m <resolved model_id>`) + markdown fence stripping before `json.loads`
+
+**Validation Run** (DEF CON 32 Counter Deception, gHqDEMrqTjE):
+- 15/15 patterns in final note (201KB): 12 on qwen3.8-27b + gpt-oss-120b, find_logical_fallacies on amalia-9b (Lusófona)
+- pattern_optimizer JSON repair added (`_parse_optimizer_json` in cli.py): fixes missing/trailing commas from LLM output, validated on real malformed captures
+- Groq free tier hard limits discovered: TPD 200K/model (qwen exhausted mid-day, per-model buckets), **TPM 8000 → 413 Request Entity Too Large** for packets over 8K tokens (find_logical_fallacies template ≈6.5K tokens + any chunk → impossible on Groq free tier; Lusófona endpoint has no such cliff)
+- Runtime chunking knob is `expert.chunk_size` in ~/.yt-obsidian/config.yml (NOT a top-level `chunking:` block — that's repo-config-only)
+- Known quirks: `--force --patterns` creates a NEW note instead of appending; cache marks failed patterns as "run" blocking `--append` (workaround: strip the pattern from cache patterns_run before appending)
+
+**Status**: ✅ Free-model pipeline fully operational on qwen3.8-27b default
+
+
+
+---
+
+### 2026-09-03: V4.1.0 — Retro Enrichment, Dedupe, Refinement Layer, Model Provenance
+
+**Major Achievement**: Six work units turning the vault from 148 raw notes (128 with empty pattern headings, 8 duplicate clusters) toward a curated, provenance-tracked, single-note-per-video state
+
+**Vault Reality Driving This Session**:
+- 148 notes in `$OBSVAULT/youtube/`, all `status: raw`
+- ~20 with filled AI Analysis sections; ~128 with EMPTY pattern headings (failed-run residue)
+- 8 `video_id` duplicate clusters (`me_at_the_zoo` ×11, `dario_amodei` ×8) from filename-collision suffixing " (2)", " (3)"
+- Transcripts stored unfenced (rendering + parsing hazards)
+- Full diagnosis and procedures: `docs/RUNBOOK.md` (new this session)
+
+**Work Units**:
+1. **Model provenance per pattern**: every pattern section carries a `*Model: X · date*` line, plus a `pattern_runs` log in frontmatter
+2. **Backtick-safe fenced transcripts**: raw transcripts always inside fenced code blocks
+3. **Transcript refinement layer** (`transcript_refiner.py`, per `docs/research/txrefine-opencode/04-integration-design.md`): regex-only pass for retro batches; fabric 2-stage refinement with validation guards for new runs; both raw and refined kept, both fenced
+4. **`--force`/`--append` duplicate bug fixes**: force now overwrites the original note in place (no more "filename (2).md"); cache no longer marks FAILED patterns as "run"
+5. **New subcommands**: `ytobs retro` (in-place enrichment of pattern-less notes) and `ytobs dedupe` (duplicate clusters → `status: duplicate` + `duplicate_of`, never deleted), both built on `frontmatter_editor.py` as the shared safe-editing core
+6. **Curated default mode**: `extract_wisdom` + `summarize` replaces 10-15 pattern auto mode (Def Con note: 15 sections, 201KB was too much)
+
+**Locked User Decisions (2026-09-03)**:
+1. Retro-enrichment edits IN PLACE, never creates new files
+2. Model provenance on every pattern section (in-note line + frontmatter `pattern_runs`)
+3. One canonical note per video; duplicates marked, never deleted
+4. Refinement layer between raw transcript and patterns (regex always, LLM 2-stage for new runs)
+5. Raw transcripts always fenced
+6. Minimal default pattern footprint (curated mode)
+
+**Status**: ✅ V4.1.0 COMPLETE — verified 2026-09-03: dedupe applied to vault (8 groups, 31 notes marked, 0 deleted), retro batch 4/4 succeeded on qwen3.8-27b, --force now overwrites in place, fresh-video E2E with live fabric refinement (2550→2637 chars) all green. Bigram validation fixed (punctuation-aware tokens). Live config `analysis_mode` flipped `auto` → `curated` per locked decision #5. 66 retro targets remain for future quota-aware batches (`ytobs retro --limit 5`).
+
 
