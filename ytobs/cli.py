@@ -12,11 +12,14 @@ Usage:
     ytobs status VIDEO          # Show status of processed video
     ytobs vault                 # Show vault statistics
     ytobs channel URL           # Process entire channel
+    ytobs retro --dry-run       # Backfill patterns on existing notes
+    ytobs dedupe                # Detect duplicate notes
     ytobs --help                # Show all options
 
 Examples:
     ytobs "https://youtube.com/watch?v=XYZ"
     ytobs --quick "https://youtube.com/watch?v=XYZ"
+    ytobs --no-refine "https://youtube.com/watch?v=XYZ"
     ytobs status jNQXAC9IVRw
     ytobs vault
     ytobs channel "https://www.youtube.com/@channelname" --limit 10
@@ -25,6 +28,7 @@ Configuration:
     Edit ~/.yt-obsidian/config.yml to customize defaults
 """
 
+import re
 import sys
 import argparse
 import subprocess
@@ -37,6 +41,7 @@ from ytobs.config import (
     Config,
     load_config,
     resolve_model,
+    resolve_model_config,
     resolve_output_dir,
     get_config_path,
     get_cache_dir,
@@ -57,6 +62,9 @@ from ytobs.channel import (
     ChannelVideo,
 )
 from ytobs.formatter import generate_frontmatter, generate_markdown
+from ytobs.frontmatter_editor import atomic_write_note
+from ytobs.packet_builder import VideoContext
+from ytobs.transcript_refiner import refine_transcript
 from ytobs.filesystem import save_markdown
 
 
@@ -128,6 +136,61 @@ def create_parser() -> argparse.ArgumentParser:
         "-v", "--verbose", action="store_true", help="Detailed output"
     )
 
+    # Retro command: ytobs retro (Wave 3 — backfill patterns on existing notes)
+    retro_parser = subparsers.add_parser(
+        "retro",
+        help="Backfill missing patterns on existing notes",
+    )
+    retro_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be processed without writing",
+    )
+    retro_parser.add_argument(
+        "-l",
+        "--limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="Max notes to process (default: 5)",
+    )
+    retro_parser.add_argument(
+        "-p",
+        "--patterns",
+        nargs="+",
+        default=["extract_wisdom", "summarize"],
+        metavar="PATTERN",
+        help="Patterns to backfill (default: extract_wisdom summarize)",
+    )
+    retro_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-run patterns even if already present",
+    )
+    retro_parser.add_argument(
+        "--model",
+        metavar="ALIAS",
+        help="Model alias override (e.g., best, fast, quality)",
+    )
+
+    # Dedupe command: ytobs dedupe (Wave 3 — duplicate note detection)
+    dedupe_parser = subparsers.add_parser(
+        "dedupe", help="Detect and mark duplicate notes"
+    )
+    dedupe_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply duplicate_of marking (default: report only)",
+    )
+    dedupe_parser.add_argument(
+        "-l",
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max notes to scan (default: all)",
+    )
+
     # Mode shortcuts
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
@@ -177,6 +240,15 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", metavar="PATH", help="Use custom config file")
 
+    # Transcript refinement toggle (W3): --refine / --no-refine; default
+    # None falls back to the refinement.enabled config value
+    parser.add_argument(
+        "--refine",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Refine transcript before analysis (default: config refinement.enabled)",
+    )
+
     # Cache control flags (V3.0)
     parser.add_argument(
         "--force",
@@ -202,7 +274,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 4.0.0 (Status & Vault Commands)",
+        version="%(prog)s 4.1.0 (Retro, Dedupe, Refinement, Model Provenance)",
     )
 
     return parser
@@ -228,14 +300,22 @@ def run_pattern_optimizer(transcript: str, debug: bool = False) -> Dict[str, Any
     else:
         sample_transcript = transcript
 
-    cmd = ["fabric-ai", "--pattern", "pattern_optimizer"]
+    config = load_config()
+    model_config = resolve_model_config(resolve_model(config.model, config), config)
+    cmd = [
+        "fabric",
+        "--pattern",
+        "pattern_optimizer",
+        "-m",
+        model_config.model_id,
+    ]
 
     try:
         result = subprocess.run(
             cmd, input=sample_transcript, capture_output=True, text=True, timeout=120
         )
     except FileNotFoundError:
-        raise RuntimeError("fabric-ai command not found. Is Fabric CLI installed?")
+        raise RuntimeError("fabric command not found. Is Fabric CLI installed?")
     except subprocess.TimeoutExpired:
         raise RuntimeError("pattern_optimizer timed out after 120s")
 
@@ -243,14 +323,35 @@ def run_pattern_optimizer(transcript: str, debug: bool = False) -> Dict[str, Any
         raise RuntimeError(f"pattern_optimizer failed: {result.stderr}")
 
     try:
-        recommendations = json.loads(result.stdout)
+        recommendations = _parse_optimizer_json(result.stdout)
         if debug:
             print(
                 f"✅ Got {len(recommendations.get('recommended_patterns', []))} pattern recommendations"
             )
         return recommendations
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, ValueError) as e:
         raise RuntimeError(f"Could not parse pattern_optimizer output: {e}")
+
+
+def _parse_optimizer_json(raw: str) -> Dict[str, Any]:
+    """Parse pattern_optimizer output, repairing common LLM JSON slips.
+
+    Models occasionally emit a missing comma between members or a trailing
+    comma. Repairs run only after a plain parse fails; a corrupted repair
+    still fails validation loudly instead of returning wrong data.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        text = text.rsplit("```", 1)[0].strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    without_trailing = re.sub(r",\s*([}\]])", r"\1", text)
+    repaired = re.sub(r'([}\]"\d])(\s*\n\s*)(["{[])', r"\1,\2\3", without_trailing)
+    return json.loads(repaired)
 
 
 def filter_patterns(
@@ -339,26 +440,29 @@ def show_concise_help():
     help_text = """ytobs - YouTube to Obsidian
 
 USAGE
-  ytobs URL                   Process video with smart analysis
+  ytobs URL                   Process video (curated mode by default)
   ytobs --quick URL           Fast mode (5 patterns, ~25s)
   ytobs --deep URL            Complete analysis (~70s)
   ytobs --preview URL         Show recommendations only
   ytobs status VIDEO          Show status of processed video
   ytobs vault                 Show vault statistics
   ytobs channel URL           Process entire channel
+  ytobs retro --dry-run       Backfill patterns on existing notes
+  ytobs dedupe                Detect duplicate notes
 
 COMMON FLAGS
   --model MODEL            Override AI model
   --patterns P1 P2 ...     Run specific patterns
   --force                  Re-analyze (ignore cache)
   --append --patterns ...  Add patterns to existing note
+  --refine / --no-refine   Toggle transcript refinement
   -v, --verbose            Detailed output
 
 EXAMPLES
   ytobs "https://youtube.com/watch?v=XYZ"
   ytobs --quick "https://youtu.be/ABC"
   ytobs status jNQXAC9IVRw
-  ytobs channel "https://youtube.com/@channelname" --limit 10
+  ytobs channel "https://www.youtube.com/@channelname" --limit 10
   ytobs --append --patterns extract_questions "URL"
 
 CONFIG: ~/.yt-obsidian/config.yml
@@ -577,6 +681,34 @@ def handle_channel_command(args, config: Config) -> int:
     return 0 if failed == 0 else 1
 
 
+def handle_retro_command(args, config: Config) -> int:
+    """Handle 'ytobs retro' command (backfill patterns on existing notes).
+
+    The implementation module lands in Wave 3; the lazy import fails
+    gracefully until then so the rest of the CLI keeps working.
+    """
+    try:
+        from ytobs.retro import run_retro
+    except ImportError:
+        print("retro: not implemented yet")
+        return 2
+    return run_retro(args, config)
+
+
+def handle_dedupe_command(args, config: Config) -> int:
+    """Handle 'ytobs dedupe' command (detect and mark duplicate notes).
+
+    The implementation module lands in Wave 3; the lazy import fails
+    gracefully until then so the rest of the CLI keeps working.
+    """
+    try:
+        from ytobs.dedupe import run_dedupe
+    except ImportError:
+        print("dedupe: not implemented yet")
+        return 2
+    return run_dedupe(args, config)
+
+
 def main() -> int:
     """Main entry point for ytobs command."""
     # Extract URL manually before argparse to avoid subparser conflicts
@@ -585,7 +717,7 @@ def main() -> int:
     url_idx = -1
 
     for i, arg in enumerate(sys.argv[1:], start=1):
-        if arg in ["status", "vault", "channel"]:
+        if arg in ["status", "vault", "channel", "retro", "dedupe"]:
             # This is a subcommand, don't extract URL
             break
         elif arg.startswith("-"):
@@ -606,7 +738,7 @@ def main() -> int:
 
     # Restore URL to args (only for non-subcommand video URLs)
     # Subcommands like 'status', 'vault', 'channel' handle their own URL arguments
-    if args.command not in ("status", "vault", "channel"):
+    if args.command not in ("status", "vault", "channel", "retro", "dedupe"):
         args.url = url
 
     try:
@@ -632,6 +764,12 @@ def main() -> int:
 
         if args.command == "vault":
             return handle_vault_command(args, config)
+
+        if args.command == "retro":
+            return handle_retro_command(args, config)
+
+        if args.command == "dedupe":
+            return handle_dedupe_command(args, config)
 
         # Determine mode based on flags
         if args.quick:
@@ -693,12 +831,25 @@ def main() -> int:
             print(f"🤖 Model: {model}")
             print(f"📁 Output: {output_dir}")
 
+        # Surfaced once when the live config predates the curated default
+        if config.analysis_mode != "curated":
+            print(
+                "💡 Tip: analysis_mode 'curated' (extract_wisdom + summarize only) "
+                "is available — edit ~/.yt-obsidian/config.yml"
+            )
+
         print(f"📥 Extracting video: {video_id}")
 
         # ============================================================
         # PHASE 0: CACHE CHECK (V3.0)
         # ============================================================
         cache = CacheManager(get_cache_dir())
+
+        # Original note path when --force re-processes an existing video
+        # (W4): captured BEFORE cache invalidation so the new note can
+        # atomically overwrite the original file instead of colliding
+        # into a " (2)" duplicate
+        force_original_path: Optional[Path] = None
 
         if cache.exists(video_id):
             cache_entry = cache.get_cache(video_id)
@@ -707,6 +858,8 @@ def main() -> int:
                 # Force re-analysis: invalidate cache
                 if verbose:
                     print(f"🔥 FORCE: Ignoring cache, re-running full analysis")
+                if cache_entry is not None:
+                    force_original_path = Path(cache_entry.markdown_path)
                 cache.invalidate(video_id)
 
             elif args.update:
@@ -773,23 +926,43 @@ def main() -> int:
                     video_info={"id": video_id},
                 )
 
-                # Build pattern outputs
+                # Build pattern outputs — only successful patterns with
+                # non-empty output (W4: failed patterns must NOT be marked
+                # as run or append empty sections)
                 pattern_outputs = {
                     pattern_name: pattern_result.combined_output
                     for pattern_name, pattern_result in result.pattern_results.items()
+                    if pattern_result.success and pattern_result.combined_output.strip()
+                }
+                appended_patterns = list(pattern_outputs.keys())
+
+                if not appended_patterns:
+                    print("⚠️  No new pattern produced output; note left unchanged")
+                    return 0
+
+                # Model provenance (W1) for the appended headings
+                append_pattern_meta = {
+                    pattern_name: {
+                        "models_used": result.pattern_results[pattern_name].models_used,
+                        "timestamp": result.pattern_results[pattern_name].run_timestamp,
+                    }
+                    for pattern_name in appended_patterns
                 }
 
                 # Append to existing note
                 note_path = Path(cache_entry.markdown_path)
                 append_patterns_to_note(
-                    note_path, pattern_outputs, update_frontmatter=True
+                    note_path,
+                    pattern_outputs,
+                    update_frontmatter=True,
+                    pattern_meta=append_pattern_meta,
                 )
 
                 # Update cache
-                cache.append_patterns(video_id, new_patterns)
+                cache.append_patterns(video_id, appended_patterns)
 
                 print(
-                    f"✅ Appended {len(new_patterns)} new section(s) to {note_path.name}"
+                    f"✅ Appended {len(appended_patterns)} new section(s) to {note_path.name}"
                 )
                 return 0
 
@@ -828,12 +1001,45 @@ def main() -> int:
                 print("   Skipping AI analysis (no transcript)")
                 args.no_analysis = True
 
+        # Transcript refinement (txrefine, W3): clean the raw transcript
+        # before analysis; the note keeps BOTH raw and refined versions.
+        # Skipped entirely when disabled (--no-refine / config) or when
+        # --no-analysis is set.
+        refinement = None
+        refine_enabled = (
+            args.refine
+            if args.refine is not None
+            else bool(config.refinement.get("enabled", True))
+        )
+        if transcript and refine_enabled and not args.no_analysis:
+            video_context = VideoContext.from_video_info({"id": video_id, **metadata})
+            refinement = refine_transcript(
+                transcript,
+                video_context=video_context,
+                backend=config.refinement.get("backend", "auto"),
+                config=config.refinement,
+            )
+            fallback_note = " · fell back" if refinement.fell_back else ""
+            print(
+                f"🧹 Refined transcript via {refinement.backend_used}: "
+                f"{refinement.original_length:,} → {refinement.refined_length:,} chars"
+                f"{fallback_note} ({len(refinement.changes_made)} change(s))"
+            )
+            if refinement.fell_back:
+                print("   ⚠️  refinement validation failed; using regex-only result")
+
         # Determine patterns to run
         patterns = None
 
         if args.no_analysis:
             # Skip analysis
             patterns = []
+
+        elif mode == "curated":
+            # Curated mode: small high-signal pattern set (new default)
+            patterns = list(config.curated_patterns)
+            if verbose:
+                print(f"💎 Curated mode: {len(patterns)} patterns")
 
         elif mode == "quick":
             # Quick mode: use configured patterns
@@ -879,6 +1085,8 @@ def main() -> int:
 
         # Run Fabric analysis if patterns specified
         ai_analysis = None
+        pattern_runs = None
+        pattern_meta = None
         if patterns and len(patterns) > 0 and transcript:
             # Merge always_run_patterns (prepend, no duplicates)
             if config.always_run_patterns:
@@ -892,7 +1100,12 @@ def main() -> int:
 
             print(f"\n🔮 Running AI analysis with {len(patterns)} patterns...")
 
-            # Run orchestrator
+            # Run orchestrator on the REFINED transcript when available
+            # (the note still stores the raw one)
+            analysis_transcript = (
+                refinement.refined_text if refinement is not None else transcript
+            )
+
             orchestrator = FabricOrchestrator(
                 patterns=patterns,
                 timeout=config.timeout_per_pattern,
@@ -904,7 +1117,7 @@ def main() -> int:
             )
 
             result = orchestrator.orchestrate(
-                transcript=transcript,
+                transcript=analysis_transcript,
                 video_title=metadata.get("title", "Untitled"),
                 video_duration_seconds=int(metadata.get("duration", 0)),
                 video_info={"id": video_id, **metadata},
@@ -916,26 +1129,56 @@ def main() -> int:
                 for pattern_name, pattern_result in result.pattern_results.items()
             }
 
+            # Model provenance records (W1) — only successful, non-empty runs
+            pattern_runs = [
+                {
+                    "pattern": pattern_name,
+                    "models_used": pattern_result.models_used,
+                    "timestamp": pattern_result.run_timestamp,
+                    "source": "new",
+                }
+                for pattern_name, pattern_result in result.pattern_results.items()
+                if pattern_result.success and pattern_result.combined_output.strip()
+            ]
+            pattern_meta = {
+                run["pattern"]: {
+                    "models_used": run["models_used"],
+                    "timestamp": run["timestamp"],
+                }
+                for run in pattern_runs
+            }
+
         # Generate and save markdown
         # Merge transcript info into metadata
         metadata.update(transcript_info)
 
         # Generate markdown
-        frontmatter = generate_frontmatter(metadata)
+        frontmatter = generate_frontmatter(metadata, pattern_runs=pattern_runs)
         markdown_content = generate_markdown(
             frontmatter=frontmatter,
             metadata=metadata,
             transcript=transcript,
             ai_analysis=ai_analysis,
+            pattern_meta=pattern_meta,
+            refined_transcript=(
+                refinement.refined_text if refinement is not None else None
+            ),
+            refinement_meta=refinement,
         )
 
         # Save to output directory
-        output_path = save_markdown(
-            content=markdown_content,
-            title=metadata.get("title", "Untitled"),
-            upload_date=metadata.get("upload_date", "19700101"),
-            output_dir=output_dir,
-        )
+        if force_original_path is not None and force_original_path.exists():
+            # --force on an existing note (W4): atomically overwrite the
+            # ORIGINAL file — never resolve_collision into a " (2)" duplicate
+            atomic_write_note(force_original_path, markdown_content, backup=True)
+            output_path = force_original_path
+        else:
+            output_path = save_markdown(
+                content=markdown_content,
+                title=metadata.get("title", "Untitled"),
+                upload_date=metadata.get("upload_date", "19700101"),
+                output_dir=output_dir,
+            )
 
         print(f"\n✅ Note saved: {output_path}")
 
@@ -943,6 +1186,10 @@ def main() -> int:
         # SAVE TO CACHE (V3.0)
         # ============================================================
         from datetime import datetime
+
+        # Cache only patterns that produced successful, non-empty output
+        # (failed runs must stay appendable); record full provenance runs
+        successful_patterns = [run["pattern"] for run in (pattern_runs or [])]
 
         cache_entry = CacheEntry(
             video_id=video_id,
@@ -953,18 +1200,28 @@ def main() -> int:
             transcript_word_count=transcript_info.get("transcript_word_count", 0),
             markdown_path=str(output_path),
             last_updated=datetime.now().isoformat(),
-            patterns_run=patterns if patterns else [],
+            patterns_run=successful_patterns,
             processing_history=[
                 {
                     "timestamp": datetime.now().isoformat(),
                     "mode": mode,
                     "model": model,
-                    "patterns_run": patterns if patterns else [],
+                    "patterns_run": successful_patterns,
+                    "pattern_runs": pattern_runs or [],
                     "success": True,
                 }
             ],
             chunks=None,
             phase1_metadata=None,
+            refinement_backend=(
+                refinement.backend_used if refinement is not None else None
+            ),
+            refinement_fell_back=(
+                refinement.fell_back if refinement is not None else None
+            ),
+            refinement_changes=(
+                refinement.changes_made if refinement is not None else None
+            ),
         )
 
         cache.save_cache(video_id, cache_entry)

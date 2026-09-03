@@ -6,11 +6,18 @@ without re-running the entire analysis.
 """
 
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
 import re
 import yaml
 
 from .exceptions import FileSystemError
+from .formatter import format_pattern_meta_line
+
+_AI_ANALYSIS_HEADING_RE = re.compile(r"^## AI Analysis[ \t]*$", re.MULTILINE)
+_TRANSCRIPT_HEADING_RE = re.compile(r"^## Transcript[ \t]*$", re.MULTILINE)
+# A section boundary is the next column-0 H2 heading or horizontal rule
+# (formatter output separates sections with `---` rules)
+_SECTION_BOUNDARY_RE = re.compile(r"^(?:## .+|---)[ \t]*$", re.MULTILINE)
 
 
 class IncrementalWriter:
@@ -85,9 +92,13 @@ class IncrementalWriter:
         # Update field
         fm_dict[field] = value
 
-        # Convert back to YAML
+        # Convert back to YAML (sort_keys=False preserves original key
+        # order — safe_load keeps insertion order, so re-dump is stable)
         self.frontmatter = yaml.dump(
-            fm_dict, default_flow_style=False, allow_unicode=True
+            fm_dict,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
         ).strip()
 
     def append_to_frontmatter_list(self, field: str, new_items: List[Any]) -> None:
@@ -115,9 +126,13 @@ class IncrementalWriter:
 
         fm_dict[field] = existing_list
 
-        # Convert back to YAML
+        # Convert back to YAML (sort_keys=False preserves original key
+        # order — safe_load keeps insertion order, so re-dump is stable)
         self.frontmatter = yaml.dump(
-            fm_dict, default_flow_style=False, allow_unicode=True
+            fm_dict,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
         ).strip()
 
     def save(self) -> None:
@@ -137,27 +152,95 @@ class IncrementalWriter:
         return f"---\n{self.frontmatter}\n---\n{self.body}"
 
 
+def _insert_into_ai_analysis(body: str, blocks: str) -> str:
+    """Insert new `### ` blocks inside the note's `## AI Analysis` section.
+
+    Matches the formatter output shape: blocks go under the existing
+    `## AI Analysis` heading (before the section's end boundary — the next
+    column-0 H2 heading or `---` rule). If the note has no such section,
+    one is created after the transcript section (or at the end of the
+    body when there is no transcript section either).
+
+    Args:
+        body: Note body (without frontmatter)
+        blocks: Pre-rendered `### {Pattern}` blocks (each ending in a
+            blank line)
+
+    Returns:
+        Updated body text
+    """
+    ai_heading = _AI_ANALYSIS_HEADING_RE.search(body)
+    if ai_heading is None:
+        section = "## AI Analysis\n\n" + blocks
+        transcript_heading = _TRANSCRIPT_HEADING_RE.search(body)
+        if transcript_heading is None:
+            return body.rstrip("\n") + "\n\n---\n\n" + section
+        boundary = _SECTION_BOUNDARY_RE.search(body, transcript_heading.end())
+        if boundary is None:
+            return body.rstrip("\n") + "\n\n---\n\n" + section
+        insert_at = boundary.start()
+    else:
+        boundary = _SECTION_BOUNDARY_RE.search(body, ai_heading.end())
+        if boundary is None:
+            return body.rstrip("\n") + "\n\n" + blocks
+        insert_at = boundary.start()
+
+    # Ensure exactly one blank line before the insertion point
+    prefix = "" if insert_at == 0 or body[:insert_at].endswith("\n\n") else "\n"
+    return body[:insert_at] + prefix + blocks + body[insert_at:]
+
+
 def append_patterns_to_note(
-    note_path: Path, pattern_outputs: Dict[str, str], update_frontmatter: bool = True
-) -> None:
-    """High-level function to append pattern outputs to existing note
+    note_path: Path,
+    pattern_outputs: Dict[str, str],
+    update_frontmatter: bool = True,
+    pattern_meta: Optional[Dict[str, dict]] = None,
+) -> List[str]:
+    """Append pattern outputs inside the note's `## AI Analysis` section.
+
+    Patterns with empty/whitespace-only output are skipped (they must not
+    produce empty sections or be marked as run). Blocks are inserted as
+    `### {Pattern Name}` sections matching the formatter's output shape;
+    each heading gets a model-provenance metadata line when pattern_meta
+    provides one.
 
     Args:
         note_path: Path to existing note
         pattern_outputs: Dict mapping pattern names to their outputs
         update_frontmatter: Whether to update patterns list in frontmatter
+        pattern_meta: Optional dict of pattern_name -> {models_used,
+            timestamp} provenance for the metadata lines (W1)
+
+    Returns:
+        List of pattern names actually appended (skipped empties excluded)
     """
     writer = IncrementalWriter(note_path)
 
-    # Append each pattern as a new section
+    # Render blocks; skip patterns with empty/whitespace-only output
+    appended: List[str] = []
+    blocks: List[str] = []
     for pattern_name, output in pattern_outputs.items():
-        heading = f"AI Analysis - {pattern_name}"
-        writer.append_section(heading, output, level=2)
+        if not output or not output.strip():
+            continue
+        display_name = pattern_name.replace("_", " ").title()
+        block = f"### {display_name}\n\n"
+        meta = (pattern_meta or {}).get(pattern_name)
+        if meta:
+            meta_line = format_pattern_meta_line(meta)
+            if meta_line:
+                block += f"{meta_line}\n\n"
+        block += f"{output}\n\n"
+        blocks.append(block)
+        appended.append(pattern_name)
+
+    if not appended:
+        return []
+
+    writer.body = _insert_into_ai_analysis(writer.body, "".join(blocks))
 
     # Update frontmatter with new patterns
     if update_frontmatter:
-        writer.append_to_frontmatter_list(
-            "fabric_patterns", list(pattern_outputs.keys())
-        )
+        writer.append_to_frontmatter_list("fabric_patterns", appended)
 
     writer.save()
+    return appended
