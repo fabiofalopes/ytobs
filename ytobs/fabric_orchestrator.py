@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Callable
 from dataclasses import dataclass, field
@@ -48,6 +49,9 @@ class PatternResult:
         error: Error message if failed
         combined_output: Final combined output text
         timing: Processing time in seconds per chunk
+        models_used: Deduplicated ordered list of model ids that produced
+            the chunks (provenance for the note, W1)
+        run_timestamp: ISO timestamp of when the pattern completed (W1)
     """
 
     pattern_name: str
@@ -56,6 +60,8 @@ class PatternResult:
     error: Optional[str] = None
     combined_output: str = ""
     timing: List[float] = field(default_factory=list)
+    models_used: List[str] = field(default_factory=list)
+    run_timestamp: Optional[str] = None
 
 
 @dataclass
@@ -82,7 +88,7 @@ class FabricOrchestrator:
 
     def __init__(
         self,
-        fabric_command: str = "fabric-ai",
+        fabric_command: str = "fabric",
         patterns: Optional[List[str]] = None,
         join_pattern: Optional[str] = None,
         timeout: int = 120,
@@ -96,7 +102,7 @@ class FabricOrchestrator:
         """Initialize Fabric orchestrator.
 
         Args:
-            fabric_command: Command to run Fabric (default: "fabric-ai")
+            fabric_command: Command to run Fabric (default: "fabric")
             patterns: List of Fabric patterns to run (default: ["youtube_summary"])
             join_pattern: Optional pattern to combine chunk outputs (default: None)
             timeout: Timeout per pattern call in seconds (default: 120)
@@ -303,6 +309,7 @@ class FabricOrchestrator:
         """
         outputs = []
         timing = []
+        models_used: List[str] = []
         total = len(packets)
 
         inter_chunk_delay = 0
@@ -332,6 +339,10 @@ class FabricOrchestrator:
 
             if result["success"]:
                 outputs.append(result["output"])
+                # Track model provenance (W1): deduped, insertion-ordered
+                model_used = result.get("model_used")
+                if model_used and model_used not in models_used:
+                    models_used.append(model_used)
                 output_len = len(result["output"])
                 if not self.stream:
                     print(f"✓ ({chunk_time:.1f}s, {output_len} chars)")
@@ -353,6 +364,7 @@ class FabricOrchestrator:
                     outputs=outputs,
                     error=f"Chunk {i} failed: {error_msg}",
                     timing=timing,
+                    models_used=models_used,
                 )
 
         # Combine outputs
@@ -365,6 +377,8 @@ class FabricOrchestrator:
             outputs=outputs,
             combined_output=combined,
             timing=timing,
+            models_used=models_used,
+            run_timestamp=datetime.now().isoformat(timespec="seconds"),
         )
 
     def _run_fabric_pattern(self, pattern: str, input_text: str) -> Dict:
@@ -378,6 +392,7 @@ class FabricOrchestrator:
             Dict with keys:
                 - success: bool
                 - output: str (if success)
+                - model_used: str (model id that produced the output, if success)
                 - error: str (if failure)
         """
         # Validate request size against primary model context
@@ -388,7 +403,7 @@ class FabricOrchestrator:
             return {"success": False, "error": error}
 
         primary = ModelHandle.from_config(self.model_config, self.fabric_command)
-        fallback_aliases = ["kimi", "fast"]
+        fallback_aliases = ["fast", "quality", "compound"]
         fallbacks = [
             ModelHandle.from_config(
                 resolve_model_config(alias, self.config), self.fabric_command
@@ -430,7 +445,11 @@ class FabricOrchestrator:
                 )
                 print(f"        (used fallback model: {model_name})")
 
-            return {"success": True, "output": output}
+            return {
+                "success": True,
+                "output": output,
+                "model_used": result.model_used,
+            }
         else:
             # Include retry count and model info in error message for visibility
             error_msg = result.error
@@ -464,6 +483,8 @@ class FabricOrchestrator:
             Dict with keys:
                 - success: bool
                 - output: str (if success)
+                - model_used: str (best-effort: the configured model id,
+                  since streaming doesn't report which model served it)
                 - error: str (if failure)
         """
         # Validate request size against primary model context
@@ -536,7 +557,11 @@ class FabricOrchestrator:
             output = "".join(output_lines).strip()
             print(f"      ✓ Chunk {chunk_num} complete ({len(output)} chars)")
 
-            return {"success": True, "output": output}
+            return {
+                "success": True,
+                "output": output,
+                "model_used": self.model_config.model_id,
+            }
 
         except subprocess.TimeoutExpired:
             if process:
@@ -544,7 +569,7 @@ class FabricOrchestrator:
             return {"success": False, "error": f"Timeout ({self.timeout}s)"}
 
         except FileNotFoundError:
-            return {"success": False, "error": "fabric-ai not found"}
+            return {"success": False, "error": "fabric not found"}
 
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -686,7 +711,7 @@ def orchestrate_fabric_analysis(
     video_duration_seconds: int,
     patterns: Optional[List[str]] = None,
     join_pattern: Optional[str] = None,
-    fabric_command: str = "fabric-ai",
+    fabric_command: str = "fabric",
     max_chunk_tokens: int = 50000,
     save_dir: Optional[Path] = None,
     debug: bool = False,

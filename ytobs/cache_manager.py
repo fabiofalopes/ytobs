@@ -19,7 +19,7 @@ import time
 import shutil
 from datetime import datetime
 from typing import Optional, Dict, List, Any
-from dataclasses import dataclass, asdict
+from dataclasses import MISSING, asdict, dataclass
 
 
 _MAX_WRITE_RETRIES = 3
@@ -127,21 +127,30 @@ class CacheEntry:
     chunks: Optional[List[Dict[str, Any]]] = None
     phase1_metadata: Optional[Dict[str, Any]] = None
 
+    # Refinement (txrefine) metadata — absent in pre-refinement caches,
+    # from_dict tolerates missing keys and falls back to these defaults
+    refinement_backend: Optional[str] = None  # "fabric" | "opencode" | "regex-only"
+    refinement_fell_back: Optional[bool] = None
+    refinement_changes: Optional[List[str]] = None
+    original_transcript_hash: Optional[str] = None  # detects transcript changes
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CacheEntry":
-        """Create CacheEntry from dict, with graceful field handling."""
+        """Create CacheEntry from dict, with graceful field handling.
+
+        Tolerates missing keys: any field absent from `data` falls back
+        to its declared default / default_factory. Unknown keys are
+        dropped.
+        """
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
-        filtered = {
-            k: v
-            for k, v in data.items()
-            if k in {f.name for f in cls.__dataclass_fields__.values()}
-        }
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
         for field in cls.__dataclass_fields__.values():
-            if field.name not in filtered:
-                if field.default is not None:
-                    filtered[field.name] = field.default
-                elif field.default_factory is not None:
-                    filtered[field.name] = field.default_factory()
+            if field.name in filtered:
+                continue
+            if field.default is not MISSING:
+                filtered[field.name] = field.default
+            elif field.default_factory is not MISSING:  # type: ignore[misc]
+                filtered[field.name] = field.default_factory()
         return cls(**filtered)
 
     def to_dict(self) -> Dict[str, Any]:
