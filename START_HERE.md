@@ -1,8 +1,8 @@
 # YouTube-Obsidian - Quick Start for AI Agents
 
-**Version:** V4.1.0 - Curation Layer (Retro, Dedupe, Refinement, Provenance)  
-**Status:** ✅ Fully Operational  
-**Location:** `~/projetos/hub/ytobs/`  
+**Version:** V4.1.0 + 2026-09-05 Gas Overhaul (direct OpenCode Go transport)
+**Status:** ✅ Operational on mimo-v2.5 chain — 10 files uncommitted (see masterplan)
+**Location:** `~/projetos/hub/ytobs/`
 **Command:** `ytobs "YOUTUBE_URL"`
 
 ---
@@ -36,27 +36,34 @@ ytobs "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 | Task | Document |
 |------|----------|
 | **Understand full context** | [CONTEXT.md](CONTEXT.md) - Complete history, decisions, current state |
+| **Run/debug the pipeline** | [docs/AGENTIC_GRAPH.md](docs/AGENTIC_GRAPH.md) - Execution graph, model routing, breakage tree |
+| **Exact model limits** | [docs/MODEL_CONTEXT_LIMITS.md](docs/MODEL_CONTEXT_LIMITS.md) - Verified context windows + sources |
+| **Vault operations** | [docs/RUNBOOK.md](docs/RUNBOOK.md) - Retro/dedupe procedures, quota playbook |
+| **What's next / resume work** | [docs/plans/YTOBS_MASTERPLAN.md](docs/plans/YTOBS_MASTERPLAN.md) - Work queue with checkboxes |
 | **User documentation** | [README.md](README.md) - How to use the tool |
 | **Installation** | [SETUP.md](SETUP.md) - Setup instructions |
-| **Architecture understanding** | [docs/architecture/](docs/architecture/) - System design by version |
-| **Development work** | [docs/development/](docs/development/) - Developer guides |
-| **Fix bugs** | CONTEXT.md → "Known Issues" section |
-| **Add features** | docs/architecture/future-multi-provider.md |
 
 ---
 
-## 🚀 Current State (V4.1.0)
+## 🚀 Current State (V4.1.0 + Gas Overhaul 2026-09-05)
+
+**Model chain (the gas):**
+- `go` (default) = mimo-v2.5 via **direct OpenAI-compatible API** to OpenCode
+  Go — ~$0.03/curated note, 1M ctx, English-guarded
+- Fallbacks: `gofree` (nemotron-3-ultra-free, $0) → `gofabric` (mimo via
+  fabric-LiteLLM) → `fast`/`quality` (Groq, 8K TPM cliff)
+- `goflash` = glm-5.3-flash, small-output tasks ONLY (over-reasons on big
+  extraction patterns)
+- Lusófona (`pt` amalia-9b): DEAD (endpoint 503)
 
 **Implemented & Working:**
+- ✅ Direct streaming adapter (`OpenAICompatAdapter`) + fabric pattern library
 - ✅ Smart cache prevents duplicate processing
-- ✅ Incremental pattern addition (`--append`)
+- ✅ Incremental pattern addition (`--append`) with `pattern_runs` provenance
 - ✅ Curated default mode (`extract_wisdom` + `summarize`)
-- ✅ Free model registry (best=qwen/qwen3.8-27b, fast=gpt-oss-20b, quality=gpt-oss-120b, compound=groq/compound-mini)
-- ✅ Model provenance per pattern section + `pattern_runs` frontmatter
-- ✅ Fenced transcripts + refinement layer (regex for retro / 2-stage LLM for new runs)
-- ✅ `ytobs retro` — in-place enrichment of pattern-less notes
-- ✅ `ytobs dedupe` — duplicate marking (never deletes)
-- ✅ Rate limit handling with retry logic
+- ✅ Model provenance per pattern section (`*Model: X · date*` lines)
+- ✅ Fenced transcripts + refinement layer
+- ✅ `ytobs retro` / `ytobs dedupe` / `ytobs patterns` / `ytobs status` / `ytobs vault`
 
 **Key Commands:**
 ```bash
@@ -86,7 +93,8 @@ ytobs --list-processed                   # Show all cached videos
 | V3.0 | 2025-12-09 | Smart cache + incremental updates |
 | V4.0 | 2025-12-17 | VideoContext packet enrichment, status/vault commands |
 | V4.0 pkg | 2026 | Extracted to hub/ytobs as pip-installable package |
-| **V4.1.0** | **2026-09-03** | **Curation layer: retro, dedupe, refinement, provenance** |
+| V4.1.0 | 2026-09-03 | Curation layer: retro, dedupe, refinement, provenance |
+| **Gas overhaul** | **2026-09-05** | **Direct OpenCode Go transport, mimo-v2.5 chain, verified limits** |
 
 ---
 
@@ -158,21 +166,24 @@ ytobs "URL" --force  # Should re-run
 
 - `CONTEXT.md` - Project memory
 - `ytobs/cli.py` - Main CLI interface
+- `ytobs/backend_adapter.py` - Transport layer (direct API + fabric adapters)
 - `ytobs/cache_manager.py` - Cache core
 - `ytobs/fabric_orchestrator.py` - AI analysis engine
 - `ytobs/frontmatter_editor.py` - Safe note editing core (V4.1)
-- `config.yaml` - Default configuration template
+- `config.yaml` - Configuration reference template (runtime: ~/.yt-obsidian/config.yml)
 
 ---
 
-## 🔜 Next Steps (V4.1+)
+## 🔜 Next Steps
 
-1. Finish retro enrichment — 66 targets remain (`ytobs retro --limit 5`, quota-aware batches)
-2. Pattern discovery (`ytobs patterns` family) — Sprint 2 of PACKET_ENRICHMENT_SPEC
-3. Vault-wide bulk operations (`vault apply`)
-4. Backlog: `--update` metadata refresh, playlist processing, vector DB
+**Start from [docs/plans/YTOBS_MASTERPLAN.md](docs/plans/YTOBS_MASTERPLAN.md)** — the live work queue. Headline items:
 
-See: docs/development/PACKET_ENRICHMENT_SPEC.md and docs/RUNBOOK.md
+1. Commit the 2026-09-05 gas overhaul (10 modified files)
+2. Retro backlog on mimo: 65 targets (~$2 total); 37 need transcript re-fetch first
+3. Append-fill-empty-headings improvement
+4. Lusófona watchdog (passive)
+
+See: docs/RUNBOOK.md (ops) and docs/AGENTIC_GRAPH.md (debug maps)
 
 ---
 
@@ -186,6 +197,6 @@ See: docs/development/PACKET_ENRICHMENT_SPEC.md and docs/RUNBOOK.md
 
 ---
 
-**Last Updated:** 2025-12-09  
+**Last Updated:** 2026-09-05  
 **Maintained By:** AI-assisted development sessions  
 **License:** MIT

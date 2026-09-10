@@ -40,7 +40,7 @@ Output: `2009-10-25_rick_astley_never_gonna_give_you_up.md` in your Obsidian vau
 
 ✅ **Transcripts & AI analysis** - Fabric-powered pattern sections with model provenance  
 ✅ **Curation layer (V4.1)** - retro enrichment, dedupe, transcript refinement  
-✅ **Free models** - validated free registry, qwen3.8-27b default  
+✅ **OpenCode Go gas** - mimo-v2.5 direct API default, verified fallback chain  
 
 🔜 **Coming Later**  
 - Pattern discovery (`ytobs patterns`)
@@ -132,7 +132,7 @@ ytobs --preview "YOUTUBE_URL"
 ### Expert Options
 ```bash
 # Use specific model
-ytobs --model llama-4-scout "YOUTUBE_URL"
+ytobs --model quality "YOUTUBE_URL"
 
 # Run specific patterns only
 ytobs --patterns extract_wisdom create_summary "YOUTUBE_URL"
@@ -155,10 +155,10 @@ On first run, `ytobs` creates `~/.yt-obsidian/config.yml` with defaults:
 
 ```yaml
 mode: auto              # auto, quick, deep
-model: kimi             # kimi, llama-4-scout, llama-70b
-output_dir: ~/Documents/obsidian_vault/youtube
-timeout_per_pattern: 60
-chunk_size: 10000
+model: go               # go (mimo-v2.5), gofree, gofabric, best, quality
+output_dir: null        # default: $OBSVAULT/youtube
+timeout_per_pattern: 120
+chunk_size: 8000
 open_in_editor: false
 ```
 
@@ -213,9 +213,11 @@ tags: [youtube, music, 80s]
 
 ## Available Models
 
-- **kimi** (default) - 10K TPM, balanced quality/speed  
-- **llama-4-scout** - 30K TPM, fastest  
-- **llama-70b** - 12K TPM, highest quality  
+- **go** (default) - mimo-v2.5 via OpenCode Go direct API, ~$0.03/note  
+- **gofree** - nemotron-3-ultra-free via OpenCode Zen (free, slower)  
+- **best/fast/quality** - Groq free tier (8K TPM cliff)  
+
+Exact context windows + sources: [docs/MODEL_CONTEXT_LIMITS.md](docs/MODEL_CONTEXT_LIMITS.md)  
 
 ## Troubleshooting
 
@@ -223,7 +225,7 @@ tags: [youtube, music, 80s]
 
 **Age-restricted videos**: Tool will show clear error with suggestions
 
-**Slow analysis**: Use `--quick` mode or `--model llama-4-scout
+**Slow analysis**: Use `--quick` mode or `--model go
 
 # Or if Firefox doesn't work:
 ytobs "https://youtu.be/VIDEO_ID" --cookies chrome

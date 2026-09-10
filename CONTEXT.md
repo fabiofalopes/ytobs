@@ -890,3 +890,57 @@ ytobs --force URL              # Re-analyze
 **Retro progress**: batch of 5 (cheapest-first) 5/5 green on qwen3.8-27b → **65 targets remain**. New finding: 37 targets have NO transcript in cache — need re-fetch (`--update` backlog) before retro can process them.
 
 
+
+
+### 2026-09-05: OpenCode Go as Gas — Direct API Transport + Model Chain Rebuild
+
+**Trigger**: Lusófona endpoint (modelos.ai.ulusofona.pt) returned 503 — amalia/ornith/omnicoder all unreachable; two newest vault notes (Filipe Grilo #118, GTA 6) had ZERO AI analysis; Groq 8K TPM cliff made the 2500-token emergency chunking unusable.
+
+**Architecture verdict (LangChain question)**: NO migration to LangChain. ytobs's AI layer is template-in/text-out; every pain hit (TPM cliffs, SSE hangs, model drift) is transport-layer. The adapter layer in `backend_adapter.py` was the designed extension point — a direct HTTP transport kills the subprocess/SSE problem class while keeping fabric's 299-pattern library as plain prompt files.
+
+**Validated (live tests)**:
+- Lusófona: 503 site-wide, dead
+- Muse Spark: /responses endpoint only → unusable by fabric/chat-completions; also Meta trains on prompts (Contributor tier)
+- deepseek-v4-flash via Go API: blocked (China-hosting opt-in required)
+- glm-5.3-flash via fabric LiteLLM vendor: hangs on long outputs (SSE stall); via curl: 3.2s
+- kimi-k2.7-code: rejects fabric's temp/top_p (needs -r), hangs in fabric anyway; 10s via curl
+- **mimo-v2.5: fabric-native 54s/pattern; direct API 67-80s/chunk — THE workhorse** (30.1K req/5h, $0.14/M)
+- nemotron-3-ultra-free: works both paths (2m20s fabric), free fallback
+- big-pickle/mimo-v2.5-free: rate-limited at test time (congested shared pool)
+- Local: Ollama has only :cloud models (402), LM Studio empty → not viable
+
+**Shipped**:
+1. `OpenAICompatAdapter` (backend_adapter.py): direct streaming chat/completions, fabric patterns loaded from `~/.config/fabric/patterns/<p>/system.md` ({{input}} substitution → single user message, strict-template-safe), usage tracking (`📊 tokens in/out`), finish_reason-aware errors, `max_output_tokens` cap per model
+2. `FabricAdapter` env wiring: `base_url` in ModelConfig now injects `--vendor LiteLLM` + `LITELLM_API_BASE_URL`/`LITELLM_API_KEY` into the subprocess env (stored fabric .env untouched)
+3. Key resolution: `api_key_env` env var → OpenCode auth.json provider (`auth_provider: opencode-go` / `opencode`); values never logged
+4. Model chain: `model: go` (mimo-v2.5 direct) → fallbacks [gofree, gofabric, fast, quality]; `goflash` (glm-5.3-flash) for small-output tasks ONLY (burned 38K reasoning tokens on extract_wisdom, sometimes zero content); `max_output_tokens: 8000` caps reasoning burn
+5. `config.fallback_models` config-driven fallback chain replaces hardcoded lists in orchestrator/metadata_extractor/refiner
+6. `output_language: English` → `OUTPUT REQUIREMENTS` in packet preamble (guards MiMo Chinese drift — observed non-deterministic ZH output)
+7. Append path now writes frontmatter `pattern_runs` (source: append) — provenance gap vs locked decision #2 closed
+8. CLI argv pre-parse bug: `--patterns VALUES` were stolen as URL (only URL-looking args accepted now)
+9. Live config: chunk TEMP knob removed (expert.chunk_size 8000 is the real knob; chunking: block was dead); Go has no TPM cliff so 8K chunks restored (15.6K-token transcript → 3 chunks vs ~7 before)
+
+**E2E verified**: GTA 6 note (1h video, 12.9K words): Phase 1 metadata 3 patterns single-call (no TPM cliff), extract_wisdom 3 chunks 67/47/33s ≈ 2.5 min, append + pattern_runs frontmatter + `*Model: mimo-v2.5 · 2026-09-05*` lines all green. Second append (summarize) green.
+
+**Known quirks**: append adds a NEW `### Extract Wisdom` heading next to stale empty ones from old failed runs (retro cleanup domain); orchestrator `--stream` Popen path not yet adapter-wired (only used with --stream flag).
+
+**Uncommitted**: 10 modified files (this session). Next: commit, retro batch on mimo-v2.5 (65 targets; 37 need transcript re-fetch first).
+
+#### 2026-09-05 (same day, follow-up): Exact context limits verified + docs
+
+- New doc `docs/MODEL_CONTEXT_LIMITS.md`: exact context windows + max-output for every registry model, with source + verification method per row.
+- Method: Groq API `/models` (live metadata); gateway bracket-probing (glm-5.3-flash accepted 1,048,018 / rejected 1,050,023 → **1,048,576 = 2^20**; nemotron-3-ultra-free limit stated verbatim in gateway error = **1,048,576**; mimo-v2.5 pass at 300,253 tok, >1M prompts hang with no clean reject); models.dev vendor entries (xiaomi/zai/nvidia).
+- `context_window` synced to exact values in `~/.yt-obsidian/config.yml`, `ytobs/config.py` defaults + embedded template, and repo `config.yaml`: go/goflash/gofabric/gofree = 1,048,576; best = 131,042; fast/quality/compound = 131,072; pt/ornith/omnicoder = 32,768 (Lusófona 503, unverifiable).
+- Gotchas recorded: glm gateway limit (2^20) ≠ z.ai native spec (1M); mimo >1M-token prompts hang (keep <~900K); prompt caching live on Go gateway (287K cached on 300K probe); max_output cap 8,000 vs Groq compound-mini real max completion 8,192.
+
+#### 2026-09-05 (same day, final): Failure Session Protocol + `ytobs doctor`
+
+**Standing rule (user decision)**: every time the tool fails, a session runs and learnings compound. Codified as the Failure Session Protocol in `docs/AGENTIC_GRAPH.md` §0: doctor → classify vs breakage tree → fix at the right level (config / new doctor check / new tree row / code) → write back to the structure. A failure session that doesn't update the structure hasn't happened.
+
+**Shipped `ytobs doctor`** (`ytobs/doctor.py`, wired as subcommand): one-command triage — env (OBSVAULT/cache), config resolution + fallback chain, per-model key resolution (never prints values), fabric binary + patterns dir (openai-compat depends on it), endpoint reachability (Go/Zen /models, Lusófona watchdog), quota-state file freshness, and a smoke test of the primary model through the REAL adapter. Flags: `--model ALIAS` (smoke a specific model), `--full` (smoke fabric providers too). Exit 1 = hard failure.
+
+**Validated live**: default run = HEALTHY with 1 warning (Lusófona 503, warning by design); `--model gofree` = HEALTHY (61s — free pool slow but alive). New empirical gotcha recorded in MODEL_CONTEXT_LIMITS.md: **mimo-v2.5 is a hybrid reasoning model** — tiny prompts emit `reasoning_content` with null `content` (doctor smoke needed a finish_reason=length pass-through instead of hard-failing on empty content).
+
+**Agentic structure this session**: docs/AGENTIC_GRAPH.md (execution graph, transport routing, model chain, 13-row breakage tree, session trace + probing recipe, economics), docs/plans/YTOBS_MASTERPLAN.md (multi-session work queue, waves 0-3 + backlog), START_HERE.md refresh, README de-staled (kimi/llama refs), RUNBOOK registry rewritten for the Go era.
+
+**Uncommitted**: 12 modified + 3 new files. Next session: Wave 0 (commit) → Wave 1 (retro backlog on mimo, ~$2 for 65 targets; 37 need transcript re-fetch).

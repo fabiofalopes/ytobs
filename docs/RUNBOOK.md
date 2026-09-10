@@ -4,7 +4,7 @@ Single source of truth for operating the YouTube→Obsidian pipeline against the
 
 **Repo**: `~/projetos/hub/ytobs` (pip package `ytobs`, v4.0.0 → v4.1.0)
 **Vault**: `$OBSVAULT/youtube/`
-**Last updated**: 2026-09-03
+**Last updated**: 2026-09-05 (gas overhaul: mimo-v2.5 chain, Lusófona 503)
 
 ---
 
@@ -125,17 +125,38 @@ ytobs "https://www.youtube.com/watch?v=VIDEO_ID"
 
 ## Quota Playbook
 
-### Model registry (all free, live-tested)
+### Model registry (validated 2026-09-05)
 
 | Role | Model | Notes |
 |------|-------|-------|
-| `best` | `qwen/qwen3.8-27b` | Default. 131K context. Groq TPM/TPD buckets apply. |
-| `fast` | `openai/gpt-oss-20b` | First fallback. |
-| `quality` | `openai/gpt-oss-120b` | Second fallback. |
-| `compound` | `groq/compound-mini` | Last fallback. Template-strict: requires the patched fabric build. |
-| `pt` | `amalia-9b` (Lusófona) | No TPM/TPD cliff. Portuguese and overflow duty. |
+| `go` | `mimo-v2.5` (OpenCode Go, direct API) | **Default.** ~$0.03/curated note, 1M ctx, no TPM cliff. Shared Go quota: $12/5h, $30/wk, $60/mo (with coding usage). |
+| `gofree` | `nemotron-3-ultra-free` (Zen) | Free fallback. Slow (~2m20s/pattern-chunk). Congested pool sometimes. |
+| `gofabric` | `mimo-v2.5` via fabric-LiteLLM | Transport fallback if the direct adapter misbehaves. |
+| `best` | `qwen/qwen3.8-27b` | Groq free tier. 131K ctx, 8K TPM cliff + TPD 200K buckets. Last resort. |
+| `fast`/`quality` | `gpt-oss-20b`/`120b` | Groq free tier fallbacks. Same cliffs. |
+| `goflash` | `glm-5.3-flash` | Small-output tasks ONLY (metadata, optimizer). Over-reasons on big extraction patterns. |
+| `pt` | `amalia-9b` (Lusófona) | **DEAD** — endpoint 503 site-wide since ≤2026-09-05. Watchdog: `curl -s -o /dev/null -w '%{http_code}' https://modelos.ai.ulusofona.pt` |
 
-**Fallback chain**: `best` → `fast` → `quality` → `compound`.
+**Fallback chain**: `go` → `gofree` → `gofabric` → `fast` → `quality`
+(config `fallback_models`, primary auto-skipped).
+
+Exact context windows and verification methods:
+[MODEL_CONTEXT_LIMITS.md](MODEL_CONTEXT_LIMITS.md).
+Routing graph and breakage tree: [AGENTIC_GRAPH.md](AGENTIC_GRAPH.md).
+
+### Retro economics on the new gas
+
+| Operation | Cost (mimo-v2.5) |
+|---|---|
+| Curated note (2 patterns, ~3 chunks) | ~$0.03 |
+| Retro note (wisdom + summarize) | ~$0.03 |
+| Full 65-note retro backlog | ~$1.5–2.0 |
+
+Groq's 8K TPM cliff is no longer the constraint it was — the emergency
+2500-token chunking is gone (8K chunks restored; `expert.chunk_size` is the
+runtime knob). Batch retro on `go` without quota anxiety, but poll
+`npm run quota:status` (in ~/.config/opencode) before long batches since the
+Go pool is shared with coding usage.
 
 ### The cliffs
 
