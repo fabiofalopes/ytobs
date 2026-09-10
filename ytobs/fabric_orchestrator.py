@@ -228,6 +228,7 @@ class FabricOrchestrator:
             max_chunk_tokens=self.max_chunk_tokens,
             save_dir=self.save_dir,
             video_info=video_info,  # V4.0: Pass video_info for VideoContext enrichment
+            output_language=getattr(self.config, "output_language", "English"),
         )
 
         chunk_time = time.time() - chunk_start
@@ -403,13 +404,13 @@ class FabricOrchestrator:
             return {"success": False, "error": error}
 
         primary = ModelHandle.from_config(self.model_config, self.fabric_command)
-        fallback_aliases = ["fast", "quality", "compound"]
+        primary_alias = resolve_model(self.config.model, self.config)
         fallbacks = [
             ModelHandle.from_config(
                 resolve_model_config(alias, self.config), self.fabric_command
             )
-            for alias in fallback_aliases
-            if alias != resolve_model(self.config.model, self.config)
+            for alias in getattr(self.config, "fallback_models", [])
+            if alias != primary_alias and alias in self.config.models
         ]
 
         handler = RateLimitHandler(

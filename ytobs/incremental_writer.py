@@ -195,6 +195,7 @@ def append_patterns_to_note(
     pattern_outputs: Dict[str, str],
     update_frontmatter: bool = True,
     pattern_meta: Optional[Dict[str, dict]] = None,
+    pattern_runs: Optional[List[Dict[str, Any]]] = None,
 ) -> List[str]:
     """Append pattern outputs inside the note's `## AI Analysis` section.
 
@@ -210,6 +211,8 @@ def append_patterns_to_note(
         update_frontmatter: Whether to update patterns list in frontmatter
         pattern_meta: Optional dict of pattern_name -> {models_used,
             timestamp} provenance for the metadata lines (W1)
+        pattern_runs: Optional W1 provenance records merged into the
+            frontmatter `pattern_runs` log (same shape as the full-run path)
 
     Returns:
         List of pattern names actually appended (skipped empties excluded)
@@ -241,6 +244,8 @@ def append_patterns_to_note(
     # Update frontmatter with new patterns
     if update_frontmatter:
         writer.append_to_frontmatter_list("fabric_patterns", appended)
+        if pattern_runs:
+            writer.append_to_frontmatter_list("pattern_runs", pattern_runs)
 
     writer.save()
     return appended

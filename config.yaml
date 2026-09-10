@@ -38,8 +38,37 @@ rate_limits:
 #   - no vendor prefix = LiteLLM (Lusófona modelos.ai.ulusofona.pt, free)
 # DO NOT use bare Ollama IDs (minimax-m2.7, kimi-k2.6, deepseek-v4-pro) —
 # they route to ollama.com and return 402 Payment Required.
-# Note: `bonsai-27b-1bit` (Lusófona) is listed but currently 500s server-side.
+# Runtime config lives in ~/.yt-obsidian/config.yml (this file is a reference
+# template). Exact context limits with sources: docs/MODEL_CONTEXT_LIMITS.md
+# (verified 2026-09-05).
 models:
+  go:
+    provider: openai-compat
+    model_id: mimo-v2.5
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/go/v1
+    auth_provider: opencode-go
+    max_output_tokens: 8000
+  goflash:
+    provider: openai-compat
+    model_id: glm-5.3-flash
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/go/v1
+    auth_provider: opencode-go
+    max_output_tokens: 8000
+  gofabric:
+    provider: fabric
+    model_id: mimo-v2.5
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/go/v1
+    auth_provider: opencode-go
+    vendor: LiteLLM
+  gofree:
+    provider: openai-compat
+    model_id: nemotron-3-ultra-free
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/v1
+    auth_provider: opencode
   best:
     provider: fabric
     model_id: qwen/qwen3.8-27b

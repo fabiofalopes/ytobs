@@ -458,8 +458,8 @@ def _run_fabric_pattern(
     models = [ModelHandle.from_config(primary, fabric_command)]
     models.extend(
         ModelHandle.from_config(resolve_model_config(alias, config), fabric_command)
-        for alias in _MODEL_FALLBACK_CHAIN
-        if alias != primary_alias
+        for alias in getattr(config, "fallback_models", _MODEL_FALLBACK_CHAIN)
+        if alias != primary_alias and alias in config.models
     )
 
     handler = RateLimitHandler(

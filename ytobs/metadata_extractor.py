@@ -83,13 +83,13 @@ class MetadataExtractor:
         )
 
         primary = ModelHandle.from_config(self.model_config, fabric_command)
-        fallback_aliases = ["fast", "quality", "compound"]
         fallbacks = [
             ModelHandle.from_config(
                 resolve_model_config(alias, self.config), fabric_command
             )
-            for alias in fallback_aliases
+            for alias in getattr(self.config, "fallback_models", [])
             if alias != resolve_model(self.config.model, self.config)
+            and alias in self.config.models
         ]
 
         self.rate_limiter = RateLimitHandler(

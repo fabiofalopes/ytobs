@@ -65,6 +65,7 @@ from ytobs.formatter import generate_frontmatter, generate_markdown
 from ytobs.frontmatter_editor import atomic_write_note
 from ytobs.packet_builder import VideoContext
 from ytobs.transcript_refiner import refine_transcript
+from ytobs.rate_limiter import ModelHandle
 from ytobs.filesystem import save_markdown
 
 
@@ -217,6 +218,21 @@ def create_parser() -> argparse.ArgumentParser:
         help="Content type for suggest (video, podcast, tutorial, talk, interview, news)",
     )
 
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Pipeline health check (start every failure session here)"
+    )
+    doctor_parser.add_argument(
+        "--model",
+        default=None,
+        metavar="ALIAS",
+        help="Smoke-test this model instead of the configured primary",
+    )
+    doctor_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Also smoke-test fabric-provider models (slower)",
+    )
+
     # Mode shortcuts
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
@@ -328,28 +344,19 @@ def run_pattern_optimizer(transcript: str, debug: bool = False) -> Dict[str, Any
 
     config = load_config()
     model_config = resolve_model_config(resolve_model(config.model, config), config)
-    cmd = [
-        "fabric",
-        "--pattern",
-        "pattern_optimizer",
-        "-m",
-        model_config.model_id,
-    ]
+
+    handle = ModelHandle.from_config(model_config, config.fabric_command)
+    result = handle.adapter.run_pattern(
+        pattern="pattern_optimizer",
+        input_text=sample_transcript,
+        model_id=model_config.model_id,
+        timeout=120,
+    )
+    if not result.success:
+        raise RuntimeError(f"pattern_optimizer failed: {result.error}")
 
     try:
-        result = subprocess.run(
-            cmd, input=sample_transcript, capture_output=True, text=True, timeout=120
-        )
-    except FileNotFoundError:
-        raise RuntimeError("fabric command not found. Is Fabric CLI installed?")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("pattern_optimizer timed out after 120s")
-
-    if result.returncode != 0:
-        raise RuntimeError(f"pattern_optimizer failed: {result.stderr}")
-
-    try:
-        recommendations = _parse_optimizer_json(result.stdout)
+        recommendations = _parse_optimizer_json(result.output)
         if debug:
             print(
                 f"✅ Got {len(recommendations.get('recommended_patterns', []))} pattern recommendations"
@@ -750,14 +757,23 @@ def main() -> int:
     url_idx = -1
 
     for i, arg in enumerate(sys.argv[1:], start=1):
-        if arg in ["status", "vault", "channel", "retro", "dedupe", "patterns"]:
+        if arg in [
+            "status",
+            "vault",
+            "channel",
+            "retro",
+            "dedupe",
+            "patterns",
+            "doctor",
+        ]:
             # This is a subcommand, don't extract URL
             break
         elif arg.startswith("-"):
             # Skip flags
             continue
-        elif not url:
-            # First positional argument that's not a subcommand is the URL
+        elif not url and (arg.startswith("http") or "youtu" in arg):
+            # First positional argument that looks like a URL
+            # (guards against --patterns VALUES being stolen as the URL)
             url = arg
             url_idx = i
             break
@@ -778,6 +794,7 @@ def main() -> int:
         "retro",
         "dedupe",
         "patterns",
+        "doctor",
     ):
         args.url = url
 
@@ -813,6 +830,11 @@ def main() -> int:
 
         if args.command == "patterns":
             return handle_patterns_command(args, config)
+
+        if args.command == "doctor":
+            from ytobs.doctor import run_doctor
+
+            return run_doctor(config, model_override=args.model, full=args.full)
 
         # Determine mode based on flags
         if args.quick:
@@ -991,6 +1013,15 @@ def main() -> int:
                     }
                     for pattern_name in appended_patterns
                 }
+                append_pattern_runs = [
+                    {
+                        "pattern": pattern_name,
+                        "models_used": result.pattern_results[pattern_name].models_used,
+                        "timestamp": result.pattern_results[pattern_name].run_timestamp,
+                        "source": "append",
+                    }
+                    for pattern_name in appended_patterns
+                ]
 
                 # Append to existing note
                 note_path = Path(cache_entry.markdown_path)
@@ -999,6 +1030,7 @@ def main() -> int:
                     pattern_outputs,
                     update_frontmatter=True,
                     pattern_meta=append_pattern_meta,
+                    pattern_runs=append_pattern_runs,
                 )
 
                 # Update cache

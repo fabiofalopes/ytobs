@@ -21,6 +21,10 @@ class ModelConfig:
     context_window: int = 200000
     base_url: Optional[str] = None
     api_key_env: Optional[str] = None
+    auth_provider: Optional[str] = None
+    vendor: Optional[str] = None
+    raw: bool = False
+    max_output_tokens: Optional[int] = None
 
 
 # Default settings for the transcript refinement (txrefine) layer.
@@ -58,6 +62,36 @@ class Config:
     # Provider-aware model registry
     models: Dict[str, ModelConfig] = field(
         default_factory=lambda: {
+            "go": ModelConfig(
+                "openai-compat",
+                "mimo-v2.5",
+                1048576,
+                base_url="https://opencode.ai/zen/go/v1",
+                auth_provider="opencode-go",
+                max_output_tokens=8000,
+            ),
+            "goflash": ModelConfig(
+                "openai-compat",
+                "glm-5.3-flash",
+                1048576,
+                base_url="https://opencode.ai/zen/go/v1",
+                auth_provider="opencode-go",
+                max_output_tokens=8000,
+            ),
+            "gofabric": ModelConfig(
+                "fabric",
+                "mimo-v2.5",
+                1048576,
+                base_url="https://opencode.ai/zen/go/v1",
+                auth_provider="opencode-go",
+            ),
+            "gofree": ModelConfig(
+                "openai-compat",
+                "nemotron-3-ultra-free",
+                1048576,
+                base_url="https://opencode.ai/zen/v1",
+                auth_provider="opencode",
+            ),
             "best": ModelConfig("fabric", "qwen/qwen3.8-27b", 131042),
             "fast": ModelConfig("fabric", "openai/gpt-oss-20b", 131072),
             "quality": ModelConfig("fabric", "openai/gpt-oss-120b", 131072),
@@ -69,12 +103,21 @@ class Config:
     )
     model_aliases: Dict[str, str] = field(
         default_factory=lambda: {
+            "go": "go",
             "best": "best",
             "fast": "fast",
             "quality": "quality",
             "pt": "pt",
         }
     )
+
+    # Registry aliases tried on rate-limit/server errors; primary auto-skipped.
+    fallback_models: List[str] = field(
+        default_factory=lambda: ["go", "gofree", "fast", "quality"]
+    )
+
+    # Guards against Chinese-trained models drifting to Chinese output.
+    output_language: str = "English"
 
     # Output settings
     output_dir: Optional[str] = None  # Default: $OBSVAULT/youtube
@@ -154,24 +197,54 @@ analysis_mode: curated
 # ============================================================================
 # Default model alias. Must resolve to an entry in model_aliases below, or be
 # a specific model_id registered in models (or a raw Fabric model tag).
-# Options: best, fast, quality, or any model alias defined below
 #
-# - best:    Auto-selects best all-around model (qwen/qwen3.8-27b via Groq)
-# - fast:    Prioritizes speed (openai/gpt-oss-20b via Groq)
-# - quality: Prioritizes quality (openai/gpt-oss-120b via Groq)
-# - pt:      European Portuguese content (amalia-9b via Lusófona, free)
+# - go:      mimo-v2.5 via OpenCode Go (direct API, DEFAULT)
+# - goflash: glm-5.3-flash via OpenCode Go — small-output tasks ONLY
+#            (over-reasons on big extraction patterns)
+# - gofabric: mimo-v2.5 via the same gateway through fabric's LiteLLM vendor
+# - gofree:  nemotron-3-ultra-free via OpenCode Zen (free)
+# - best/fast/quality: Groq free tier (8K TPM cliff applies)
+# - pt:      European Portuguese content (amalia-9b via Lusófona; endpoint
+#            was 503 on 2026-09-05)
 #
-# All models below are FREE and validated against `fabric -L` (2026-09-01).
-# Do NOT use bare Ollama IDs (minimax-m2.7, kimi-k2.6, deepseek-v4-pro) —
-# they route to ollama.com and return 402 Payment Required.
-model: best
+# Historical note: bare Ollama IDs (minimax-m2.7, kimi-k2.6, deepseek-v4-pro)
+# route to ollama.com and return 402 Payment Required. Do not use them.
 
 # Provider-aware model registry.
 # Add, remove, or edit entries to switch providers without touching code.
-# 'provider' selects the backend adapter. Only 'fabric' is implemented today.
-# Groq-prefixed IDs use the free-tier Groq key; unprefixed IDs use the
-# free LiteLLM endpoint (modelos.ai.ulusofona.pt).
+# 'provider' selects the backend adapter: 'fabric' (Fabric CLI) or
+# 'openai-compat' (direct OpenAI-compatible API, streaming).
+# Keys for OpenCode models are read from OpenCode auth.json (auth_provider).
+model: go
+
 models:
+  go:
+    provider: openai-compat
+    model_id: mimo-v2.5
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/go/v1
+    auth_provider: opencode-go
+    max_output_tokens: 8000
+  goflash:
+    provider: openai-compat
+    model_id: glm-5.3-flash
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/go/v1
+    auth_provider: opencode-go
+    max_output_tokens: 8000
+  gofabric:
+    provider: fabric
+    model_id: mimo-v2.5
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/go/v1
+    auth_provider: opencode-go
+    vendor: LiteLLM
+  gofree:
+    provider: openai-compat
+    model_id: nemotron-3-ultra-free
+    context_window: 1048576
+    base_url: https://opencode.ai/zen/v1
+    auth_provider: opencode
   best:
     provider: fabric
     model_id: qwen/qwen3.8-27b
@@ -463,12 +536,23 @@ def load_config() -> Config:
                     context_window=model.get("context_window", 200000),
                     base_url=model.get("base_url"),
                     api_key_env=model.get("api_key_env"),
+                    auth_provider=model.get("auth_provider"),
+                    vendor=model.get("vendor"),
+                    raw=bool(model.get("raw", False)),
+                    max_output_tokens=model.get("max_output_tokens"),
                 )
                 for name, model in user_config["models"].items()
             }
 
         if "model_aliases" in user_config:
             config.model_aliases = user_config["model_aliases"]
+
+        config.fallback_models = user_config.get(
+            "fallback_models", config.fallback_models
+        )
+        config.output_language = user_config.get(
+            "output_language", config.output_language
+        )
 
         return config
 

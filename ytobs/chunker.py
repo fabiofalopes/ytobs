@@ -19,15 +19,22 @@ from .metadata_extractor import GlobalMetadata
 class TranscriptChunker:
     """Orchestrates transcript chunking and enriched packet creation."""
 
-    def __init__(self, max_chunk_tokens: int = 50000, overlap_tokens: int = 500):
+    def __init__(
+        self,
+        max_chunk_tokens: int = 50000,
+        overlap_tokens: int = 500,
+        output_language: str = "English",
+    ):
         """Initialize chunker.
 
         Args:
             max_chunk_tokens: Maximum tokens per chunk (default: 8000)
             overlap_tokens: Overlap between chunks (default: 200)
+            output_language: Language directive injected into packet preambles
         """
         self.max_chunk_tokens = max_chunk_tokens
         self.overlap_tokens = overlap_tokens
+        self.output_language = output_language
 
     def chunk_and_enrich(
         self,
@@ -162,6 +169,7 @@ class TranscriptChunker:
             transcript_segment=transcript,
             token_count=token_count,
             video_context=video_context,
+            output_language=self.output_language,
         )
 
         return [packet]
@@ -199,6 +207,7 @@ class TranscriptChunker:
                 transcript_segment=chunk["text"],
                 token_count=chunk["token_count"],
                 video_context=video_context,
+                output_language=self.output_language,
             )
             packets.append(packet)
 
@@ -251,6 +260,7 @@ def chunk_transcript(
     overlap_tokens: int = 500,
     save_dir: Optional[Path] = None,
     video_info: Optional[Dict] = None,
+    output_language: str = "English",
 ) -> List[EnrichedPacket]:
     """Convenience function for transcript chunking.
 
@@ -268,7 +278,9 @@ def chunk_transcript(
         List[EnrichedPacket]: Enriched packets ready for processing
     """
     chunker = TranscriptChunker(
-        max_chunk_tokens=max_chunk_tokens, overlap_tokens=overlap_tokens
+        max_chunk_tokens=max_chunk_tokens,
+        overlap_tokens=overlap_tokens,
+        output_language=output_language,
     )
 
     return chunker.chunk_and_enrich(

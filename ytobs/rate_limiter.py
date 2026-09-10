@@ -31,7 +31,9 @@ class ModelHandle:
         from .backend_adapter import get_adapter
 
         return cls(
-            adapter=get_adapter(config.provider, fabric_command=fabric_command),
+            adapter=get_adapter(
+                config.provider, fabric_command=fabric_command, model_config=config
+            ),
             model_id=config.model_id,
             context_window=config.context_window,
         )
